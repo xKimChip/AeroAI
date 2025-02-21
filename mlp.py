@@ -6,6 +6,8 @@ import json
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
+import joblib
+import os
 
 class FlightPredictionMLP(nn.Module):
     def __init__(self, input_size):
@@ -237,6 +239,54 @@ def train_model(model, train_data, val_data, epochs=100, batch_size=64):
     
     return model
 
+def save_model(model, scaler, detector, save_dir='saved_models'):
+    """Save the trained model, scaler, and detector configuration"""
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    
+    model_path = os.path.join(save_dir, 'flight_anomaly_model.pth')
+    scaler_path = os.path.join(save_dir, 'scaler.joblib')
+    detector_path = os.path.join(save_dir, 'detector.joblib')
+    
+    # Save the PyTorch model
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'input_size': model.network[0].in_features
+    }, model_path)
+    
+    # Save the scaler
+    joblib.dump(scaler, scaler_path)
+    
+    # Save detector configuration
+    detector_config = {
+        'threshold': detector.threshold.item() if detector.threshold is not None else None,
+        'threshold_multiplier': detector.threshold_multiplier
+    }
+    joblib.dump(detector_config, detector_path)
+    
+    print(f"\nModel saved successfully")
+
+def load_model(model_path='saved_models/flight_anomaly_model.pth', 
+              scaler_path='saved_models/scaler.joblib',
+              detector_path='saved_models/detector.joblib'):
+    """Load the saved model, scaler, and detector configuration"""
+    # Load model
+    checkpoint = torch.load(model_path)
+    model = FlightPredictionMLP(input_size=checkpoint['input_size'])
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
+    
+    # Load scaler
+    scaler = joblib.load(scaler_path)
+    
+    # Load detector configuration
+    detector_config = joblib.load(detector_path)
+    detector = AnomalyDetector(model, scaler, detector_config['threshold_multiplier'])
+    detector.threshold = torch.tensor(detector_config['threshold'])
+    
+    print(f"\nModel loaded successfully")
+    return model, scaler, detector
+
 def main():
     try:
         # 1. Load and preprocess normal data
@@ -271,12 +321,18 @@ def main():
         
         results = detector.evaluate(X_val, anomaly_features)
         
-        # 8. Optional: Detect anomalies in new data
+        # 8. Optional: Detect anomalies in sample data
         print("\nExample: Detecting anomalies in sample data...")
         sample_data = X_val[:5]
         predictions = detector.predict(sample_data)
         for i, is_anomaly in enumerate(predictions):
             print(f"Sample {i+1}: {'Anomaly' if is_anomaly else 'Normal'}")
+            
+        # 9. Save model and components
+        print("\nSaving model...")
+        save_model(model, scaler, detector)
+
+        # model, scaler, detector = load_model()
             
     except Exception as e:
         print(f"Error in main execution: {str(e)}")

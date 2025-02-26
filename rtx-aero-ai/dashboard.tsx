@@ -22,7 +22,30 @@ const BASE_COORDINATES: [number, number] = [33.6761, -117.7317]
 const RADIUS_MILES = 10
 const RADIUS_KM = RADIUS_MILES * 1.60934
 
-// Function to generate random coordinates within a radius
+// Define Aircraft interface
+interface Aircraft {
+  id: string;
+  pitr: string;
+  type: string;
+  ident: string;
+  air_ground: string;
+  alt: number;
+  gs: number;
+  heading: number;
+  lat: number;
+  lon: number;
+  nav_modes: string;
+  squawk: string;
+  updateType: string;
+  vertRate: number;
+  threat: string;
+  threatScore: number;
+  previousData: Aircraft | null;
+}
+
+//----------------------------------------------------
+// Function to generate random coordinates within a radius, we will replace this with the actual coordinates
+//----------------------------------------------------
 const generateRandomCoordinate = (center: [number, number], radiusInKm: number): [number, number] => {
   const radiusInDegrees = radiusInKm / 111.32 // 1 degree is approximately 111.32 km
   const u = Math.random()
@@ -33,15 +56,17 @@ const generateRandomCoordinate = (center: [number, number], radiusInKm: number):
   const y = w * Math.sin(t)
   return [center[0] + y, center[1] + x]
 }
-
+//----------------------------------------------------
 // Function to generate a random update type
+//----------------------------------------------------
 const generateUpdateType = () => {
   const types = ["A", "B", "C", "D"]
   return types[Math.floor(Math.random() * types.length)]
 }
-
+//----------------------------------------------------
 // Generate 20 random flights within the 10-mile radius
-const generateFlights = (count: number) => {
+//----------------------------------------------------
+const generateFlights = (count: number): Aircraft[] => {
   const types = ["Commercial", "Private", "Military", "UAV"]
   const navModes = ["autopilot", "lnav", "tcas", "vnav"]
 
@@ -80,7 +105,7 @@ const restrictedZone = {
   radius: 2000, // meters
 }
 
-function MapControls({ selectedAircraft }: { selectedAircraft: any }) {
+function MapControls({ selectedAircraft }: { selectedAircraft: Aircraft | null }) {
   const map = useMap()
 
   useEffect(() => {
@@ -116,8 +141,8 @@ function ZoomControl() {
 }
 
 export default function Dashboard() {
-  const [aircraft, setAircraft] = useState(initialAircraft)
-  const [selectedAircraft, setSelectedAircraft] = useState(null)
+  const [aircraft, setAircraft] = useState<Aircraft[]>(initialAircraft)
+  const [selectedAircraft, setSelectedAircraft] = useState<Aircraft | null>(null)
   const [trainingMode, setTrainingMode] = useState(false)
   const [showRestrictedZone, setShowRestrictedZone] = useState(true)
   const [threatThreshold, setThreatThreshold] = useState(0.5)
@@ -148,7 +173,7 @@ export default function Dashboard() {
     return () => clearInterval(interval)
   }, [])
 
-  const getAircraftIcon = (aircraft) => {
+  const getAircraftIcon = (aircraft: Aircraft) => {
     const color = aircraft.threat === "High" ? "red" : aircraft.threat === "Medium" ? "orange" : "green"
     return L.divIcon({
       className: "custom-icon",
@@ -160,16 +185,18 @@ export default function Dashboard() {
     })
   }
 
-  const handleAircraftClick = (aircraft) => {
+  const handleAircraftClick = (aircraft: Aircraft) => {
     setSelectedAircraft(aircraft)
   }
 
-  const handleFeedback = (feedback) => {
-    console.log(`Feedback for ${selectedAircraft.id}: ${feedback}`)
+  const handleFeedback = (feedback: string) => {
+    if (selectedAircraft) {
+      console.log(`Feedback for ${selectedAircraft.id}: ${feedback}`)
+    }
     // Here you would typically send this feedback to your backend
   }
 
-  const getUpdateTypeDescription = (updateType) => {
+  const getUpdateTypeDescription = (updateType: string) => {
     switch (updateType) {
       case "A":
         return "Position Update"
@@ -184,7 +211,7 @@ export default function Dashboard() {
     }
   }
 
-  const getThreatExplanation = (aircraft) => {
+  const getThreatExplanation = (aircraft: Aircraft) => {
     if (aircraft.threat === "High") {
       return `Aircraft ${aircraft.id} is flagged as a high threat due to unusual behavior patterns. It's currently at altitude ${aircraft.alt} ft with a vertical rate of ${aircraft.vertRate} ft/min. Confidence: High`
     } else if (aircraft.threat === "Medium") {
@@ -193,7 +220,7 @@ export default function Dashboard() {
     return `Aircraft ${aircraft.id} is behaving within normal parameters. Current altitude: ${aircraft.alt} ft, speed: ${aircraft.gs} knots. Confidence: Low`
   }
 
-  const getChanges = (aircraft) => {
+  const getChanges = (aircraft: Aircraft) => {
     if (!aircraft.previousData) return []
     const changes = []
     if (Math.abs(aircraft.gs - aircraft.previousData.gs) > 20) {
@@ -338,7 +365,7 @@ export default function Dashboard() {
                         <span className="font-semibold">{ac.id}</span>
                         <Badge
                           variant={
-                            ac.threat === "High" ? "destructive" : ac.threat === "Medium" ? "warning" : "secondary"
+                            ac.threat === "High" ? "destructive" : ac.threat === "Medium" ? "secondary" : "outline"
                           }
                         >
                           {ac.threat}

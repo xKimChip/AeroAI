@@ -324,8 +324,12 @@ class AnomalyDetector:
             print(f"95th percentile: {percentile_95:.6f}")
             print(f"99th percentile: {percentile_99:.6f}")
 
-    def predict(self, data, return_scores=False):
+    def predict(self, data, return_scores=False,altitude_threshold=45000.0,speed_threshold=600.0):
         """Predict anomalies in new data"""
+        #print("TESTING PURPOSES")
+        #column_names = data.columns.tolist()
+        #print(column_names)
+        
         self.model.eval()
         with torch.no_grad():
             data_tensor = torch.FloatTensor(data)
@@ -334,6 +338,29 @@ class AnomalyDetector:
 
             anomalies = reconstruction_errors > self.threshold
 
+            altitude_col = 0  # Altitude column index
+
+            altitude_constraint = torch.from_numpy(
+                data[:, altitude_col] > (altitude_threshold - self.scaler.mean_[altitude_col]) / self.scaler.scale_[altitude_col]
+            )
+            anomalies |= altitude_constraint
+            
+            print("TESTING SCALER ALTITUDE")
+            print(self.scaler.mean_[altitude_col])
+            print(self.scaler.scale_[altitude_col])
+
+            speed_col = 2  # Ground speed column index
+
+            # Apply ground speed constraint if column is specified
+            speed_constraint = torch.from_numpy(
+                data[:, speed_col] > (speed_threshold - self.scaler.mean_[speed_col]) / self.scaler.scale_[speed_col]
+            )
+            anomalies |= speed_constraint
+
+            print("TESTING SCALER SPEED")
+            print(self.scaler.mean_[speed_col])
+            print(self.scaler.scale_[speed_col])
+            
             if return_scores:
                 return anomalies.numpy(), reconstruction_errors.numpy()
             return anomalies.numpy()
@@ -550,7 +577,7 @@ def main():
     try:
         # 1. Load and preprocess normal data
         print("Loading and preprocessing data...")
-        df = minimal_preprocess('/content/drive/MyDrive/data_MVP.json')
+        df = minimal_preprocess('data/data_MVP.json')
         # 2. Prepare features
         features = ['alt', 'gs', 'heading', 'lat', 'lon', 'vertRate', 'altChange_encoded']
         # Add new engineered features if they exist
@@ -620,11 +647,39 @@ def main():
         # Optionally load the model back to verify
         #
 
+        
+        
         print("\nEnhanced model training and evaluation complete!")
+
+
+
 
     except Exception as e:
         print(f"Error in main execution: {str(e)}")
         raise
+    
+# def main2():
+#     test_df = pd.DataFrame(
+#         {
+#             "id": "QTR176-1681826580-schedule-0777",
+#             "pitr": 1682015957.0,
+#             "alt": 45200.0,
+#             "altChange": " ",
+#             "gs": 495.0,
+#             "heading": 142.0,
+#             "lat": 31.91217,
+#             "lon": 46.53798,
+#             "vertRate": 0.0,
+#             "anomaly": 0
+#         },
+# )
+    
+#     model, scaler, detector = load_model()
+#     features = ['alt', 'gs', 'heading', 'lat', 'lon', 'vertRate', 'altChange_encoded']
+#     scaled = scaler.transform(test_df[features].values)
+#     model.predict(scaled)
+#     print(test_df)
+    
 
 
 if __name__ == "__main__":

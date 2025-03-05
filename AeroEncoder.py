@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 import joblib
 import os
 
-class EnhancedFlightPredictionMLP(nn.Module):
+class EnhancedFlightPrediction(nn.Module):
     def __init__(self, input_size, hidden_sizes=[256, 128, 64, 32, 64, 128, 256]):
         """
         Enhanced autoencoder with larger capacity and more sophisticated architecture
@@ -18,7 +18,7 @@ class EnhancedFlightPredictionMLP(nn.Module):
             input_size: Number of input features
             hidden_sizes: List of hidden layer sizes for the encoder and decoder
         """
-        super(EnhancedFlightPredictionMLP, self).__init__()
+        super(EnhancedFlightPrediction, self).__init__()
 
         # Ensure symmetric architecture for proper autoencoder
         self.input_size = input_size
@@ -476,7 +476,7 @@ def save_model(model, scaler, detector, save_dir='saved_models'):
     torch.save({
         'model_state_dict': model.state_dict(),
         'input_size': model.input_size,
-        'model_type': 'EnhancedFlightPredictionMLP'
+        'model_type': 'EnhancedFlightPrediction'
     }, model_path)
 
     # Save the scaler
@@ -497,14 +497,14 @@ def load_model(model_path='saved_models/flight_anomaly_model.pth',
     """Load the saved model, scaler, and detector configuration"""
     # Load model
     checkpoint = torch.load(model_path)
-    model_type = checkpoint.get('model_type', 'FlightPredictionMLP')
+    model_type = checkpoint.get('model_type', 'FlightPrediction')
 
-    if model_type == 'EnhancedFlightPredictionMLP':
-        model = EnhancedFlightPredictionMLP(input_size=checkpoint['input_size'])
+    if model_type == 'EnhancedFlightPrediction':
+        model = EnhancedFlightPrediction(input_size=checkpoint['input_size'])
     else:
         # Fallback for compatibility with older models
         from collections import OrderedDict
-        model = FlightPredictionMLP(input_size=checkpoint['input_size'])
+        model = FlightPrediction(input_size=checkpoint['input_size'])
 
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
@@ -570,7 +570,7 @@ def main():
 
         # 5. Create and train the enhanced model
         print("\nTraining enhanced model with larger architecture...")
-        model = EnhancedFlightPredictionMLP(input_size=len(features))
+        model = EnhancedFlightPrediction(input_size=len(features))
         model, train_losses, val_losses = train_model(model, X_train, X_val, epochs=150, batch_size=128)
         #model, scaler, detector = load_model()
         # 6. Generate synthetic commercial flight anomalies

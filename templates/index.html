@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Aircraft Detection & Tracking (Speed to Next Threat)</title>
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  
+  <style>
+    #map {
+      height: 80vh;
+      width: 100%;
+      margin-bottom: 10px;
+    }
+    #controls {
+      margin-bottom: 10px;
+    }
+    #threat-table-container {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 10px;
+      border-radius: 5px;
+      max-height: 400px;
+      overflow-y: auto;
+      z-index: 9999;
+    }
+    table {
+      border-collapse: collapse;
+      width: 300px;
+    }
+    th, td {
+      border: 1px solid #aaa;
+      padding: 6px;
+      text-align: center;
+    }
+    .threat {
+      color: red;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>Aircraft Detection &amp; Tracking (Speed to Next Threat)</h1>
+  <p>
+    This version shows flights at a normal pace (1 flight/sec). When you press “Next Threat,”
+    it <strong>accelerates</strong> through the remaining flights at 200ms intervals, 
+    showing all flights (including blue) until it finds the next anomaly (red).
+    Then it returns to normal speed.
+  </p>
+
+  <div id="controls">
+    <button id="btn-next-threat">Next Threat</button>
+  </div>
+
+  <div id="map"></div>
+
+  <div id="threat-table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>Aircraft ID</th>
+          <th>Score</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="threat-table-body"></tbody>
+    </table>
+  </div>
+
+  <script>
+    let map = L.map('map').setView([30.0, -20.0], 3);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // We store all flights after fetching them:
+    let allFlights = [];
+    let currentIndex = 0;
+
+    // Intervals:
+    let normalPlaybackInterval = null;
+    let normalDelay = 500; // 1 second
+    let fastDelay = 50;    
+
+    // 1) Fetch all flights ONCE
+    async function fetchAllFlights() {
+      try {
+        const response = await fetch('/get_flight_data');
+        const data = await response.json();
+        if (data.error) {
+          console.error(data.error);
+          return;
+        }
+        allFlights = data;
+        console.log(`Fetched ${allFlights.length} flights in total.`);
+      } catch (err) {
+        console.error('Error fetching flight data:', err);
+      }
+    }
+
+    // 2) Start normal playback
+    function startNormalPlayback() {
+      stopPlayback(); // clear any existing intervals
+      normalPlaybackInterval = setInterval(() => {
+        revealNextFlight(false); // false => normal mode
+      }, normalDelay);
+    }
+
+    // 3) Reveal the next flight in either normal or fast mode
+    //    "fastMode" param indicates if we are speeding up or not
+    function revealNextFlight(fastMode) {
+      if (!allFlights.length) return;
+      if (currentIndex >= allFlights.length) {
+        console.log("All flights have been displayed.");
+        if (fastMode) {
+          // once we run out in fast mode, just stop
+          stopPlayback();
+        }
+        return;
+      }
+      const flight = allFlights[currentIndex];
+      currentIndex++;
+      addFlightToMapAndTable(flight);
+
+      // If in fast mode and we just displayed a THREAT, let's slow back down
+      if (fastMode && flight.anomaly) {
+        // Stop the fast loop
+        stopPlayback();
+        // Resume normal speed
+        startNormalPlayback();
+      }
+    }
+
+    // 4) The function that actually draws the flight
+    function addFlightToMapAndTable(flight) {
+      let color = flight.anomaly ? 'red' : 'blue';
+      let marker = L.circleMarker([flight.lat, flight.lon], {
+        color: color,
+        radius: 6
+      }).addTo(map);
+
+      marker.bindPopup(`
+        <strong>Aircraft ID:</strong> ${flight.id}<br/>
+        <strong>Altitude:</strong> ${flight.alt}<br/>
+        <strong>Speed:</strong> ${flight.gs}<br/>
+        <strong>Heading:</strong> ${flight.heading}<br/>
+        <strong>Score:</strong> ${flight.score.toFixed(4)}<br/>
+        <strong>Anomaly:</strong> ${flight.anomaly}
+      `);
+
+      // If anomaly, add to threat table
+      if (flight.anomaly) {
+        const tableBody = document.getElementById('threat-table-body');
+        let row = document.createElement('tr');
+        row.classList.add('threat');
+        row.innerHTML = `
+          <td>${flight.id || 'Unknown'}</td>
+          <td>${flight.score.toFixed(2)}</td>
+          <td>Threat</td>
+        `;
+        tableBody.appendChild(row);
+      }
+    }
+
+    // 5) "Next Threat" button => fast forward
+    function jumpToNextThreat() {
+      // If user clicks "Next Threat," we speed up the reveal until we find an anomaly
+      // but we DO NOT skip the normal flights, we show them quickly at 'fastDelay'
+      stopPlayback(); // stop the normal 1-second reveal
+      normalPlaybackInterval = setInterval(() => {
+        revealNextFlight(true); // true => fast mode
+      }, fastDelay);
+    }
+
+    // Utility: Clear intervals
+    function stopPlayback() {
+      if (normalPlaybackInterval) {
+        clearInterval(normalPlaybackInterval);
+        normalPlaybackInterval = null;
+      }
+    }
+
+    // 6) On page load
+    (async () => {
+      await fetchAllFlights();
+      startNormalPlayback(); // begin normal speed
+
+      document.getElementById('btn-next-threat').addEventListener('click', jumpToNextThreat);
+    })();
+
+   
+  </script>
+</body>
+</html>

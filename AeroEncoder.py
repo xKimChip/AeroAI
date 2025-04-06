@@ -326,10 +326,6 @@ class AnomalyDetector:
 
     def predict(self, data, return_scores=False,altitude_threshold=45000.0,speed_threshold=600.0):
         """Predict anomalies in new data"""
-        #print("TESTING PURPOSES")
-        #column_names = data.columns.tolist()
-        #print(column_names)
-        
         self.model.eval()
         with torch.no_grad():
             data_tensor = torch.FloatTensor(data)
@@ -361,9 +357,23 @@ class AnomalyDetector:
             # print(self.scaler.mean_[speed_col])
             # print(self.scaler.scale_[speed_col])
             
+            anomalies_np = anomalies.numpy()
+            print(predictions)
+            #anomalies_df = pd.DataFrame(anomalies_np )
+            
+            features = ['alt', 'gs', 'heading', 'lat', 'lon', 'vertRate', 'altChange_encoded']
+            data_df = pd.DataFrame(data)
+            
+            data_df['anomaly'] = anomalies_np
+            #result = np.hstack((data, anomalies_np))
+            
+            
+            #data['anomaly'] = anomalies_np
+
             if return_scores:
-                return anomalies.numpy(), reconstruction_errors.numpy()
-            return anomalies.numpy()
+                data['reconstruction_error'] = reconstruction_errors.numpy()
+                return data
+            return data_df
 
     def evaluate(self, normal_data, anomaly_data):
         """Evaluate detector performance"""
@@ -573,11 +583,21 @@ def analyze_anomaly_scores(anomaly_df, scores, detector_threshold):
             #         if feature in missed.columns:
             #             print(f"    {feature}: {missed.iloc[0][feature]}")
 
+def flight_prediction(data, model, scaler, detector):
+    """Predict anomalies in flight data using the trained model"""
+    features = ['alt', 'gs', 'heading', 'lat', 'lon', 'vertRate', 'altChange_encoded']
+    
+    
+    scaled = scaler.transform(data[features].values)
+    anomalies = detector.predict(scaled)
+    return anomalies
+
 def main():
     try:
         # 1. Load and preprocess normal data
         print("Loading and preprocessing data...")
         df = minimal_preprocess('data/data_MVP.json')
+        
         # 2. Prepare features
         features = ['alt', 'gs', 'heading', 'lat', 'lon', 'vertRate', 'altChange_encoded']
         # Add new engineered features if they exist

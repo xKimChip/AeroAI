@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import json, socket, ssl, sys, time, zlib, math
+from haversine import haversine, Unit
 import tkinter as tk
 
 
@@ -8,6 +9,7 @@ username = ""
 apikey = ""
 latitude = ""
 longitude = ""
+range = ""
 
 compression = None        # set to "deflate", "decompress", or "gzip" to enable compression
 servername = "firehose.flightaware.com"
@@ -21,10 +23,11 @@ def get_user_input():
    root.geometry("200x400")
    root.title("AeroHose")
    
-   username_var = tk.StringVar(root, value="XXXXX")
-   apikey_var = tk.StringVar(root, value="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
-   latitude_var = tk.StringVar(root, value="XX.XXXXXX")
-   longitude_var = tk.StringVar(root, value="XX.XXXXXX")
+   username_var = tk.StringVar(root, value="RTXDC")
+   apikey_var = tk.StringVar(root, value="ab2cbcfcbee5c5a3263d3caf2021eafe286f0caf")
+   latitude_var = tk.StringVar(root, value="37.7749")
+   longitude_var = tk.StringVar(root, value="46.53798")
+   range_var = tk.StringVar(root, value="300")
    
    values = {}
    
@@ -34,12 +37,14 @@ def get_user_input():
       values['apikey'] = apikey_var.get()
       values['latitude'] = latitude_var.get()
       values['longitude']= longitude_var.get()
+      values['range'] = range_var.get()
 
       # Print values for debugging
-      print(f"Username: {username}")
-      print(f"API Key: {apikey}")
-      print(f"Latitude: {latitude}")
-      print(f"Longitude: {longitude}")
+      print(f"Username: {values['username']}")
+      print(f"API Key: {values['apikey']}")
+      print(f"Latitude: {values['latitude']}")
+      print(f"Longitude: {values['longitude']}")
+      print(f"Range: {values['range']}")
       
       root.destroy()  # Close the GUI after submission
    
@@ -70,6 +75,11 @@ def get_user_input():
    longitude_label.pack(padx=10, pady=0)
    lon = tk.Entry(root, textvariable=longitude_var)
    lon.pack(padx=10, pady=5)
+   
+   range_label = tk.Label(root, text="Range", font=("Helvetica", 8))
+   range_label.pack(padx=10, pady=5)
+   ran = tk.Entry(root, textvariable=range_var)
+   ran.pack(padx=10, pady=5)
 
 
    # Submit button
@@ -78,7 +88,7 @@ def get_user_input():
    
    root.mainloop()
    
-   return values['username'], values['apikey'], values['latitude'], values['longitude']
+   return values['username'], values['apikey'], values['latitude'], values['longitude'], values['range']
 
    
 
@@ -120,20 +130,21 @@ class InflateStream:
       # EOF
       return ''
 
-# def haversine(lat1, lon1, lat2, lon2):
+def haversine(lat1, lon1, lat2, lon2):
     
-#    R = 6371.0  # Radius of Earth in kilometers
-#    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+   #R = 6371.0  # Radius of Earth in kilometers
+   R = 3958.756  # Radius of Earth in miles
+   lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
     
-#    dlon = lon2 - lon1
-#    dlat = lat2 - lat1
+   dlon = lon2 - lon1
+   dlat = lat2 - lat1
    
-#    a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
-#    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+   a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
+   c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-#    distance = R * c
-#    print(f"Distance: {distance:.2f} km")
-#    return distance
+   distance = R * c
+   #print(f"Distance: {distance:.2f} miles")    debugging 
+   return distance
 
 # function to parse JSON data:
 def parse_json( str ):
@@ -141,20 +152,20 @@ def parse_json( str ):
        # parse all data into dictionary decoded:
        decoded = json.loads(str)
        
-       
        # Only looking for positional updates, other types seen "arrival", "flinfo"
        if decoded["type"] != "position":
           print(f"Skipped type: {decoded[type]}")
-          return -1
-       #print(haversine(decoded['lat'], decoded['lon'], float(latitude.get()), float(longitude.get())))
+          #return -1
 
-      #  elif haversine(decoded['lat'], decoded['lon'], float(latitude.get()), float(longitude.get())) > 0.5:
-      #     print(f"Skipped position: {decoded['lat']}, {decoded['lon']}")
-      #     return -1
+       elif haversine(float(decoded["lat"]), float(decoded['lon']), float(latitude), float(longitude)) > float(range):
+          print(f"Skipped position: {decoded['lat']}, {decoded['lon']}")
+          #return -1
+         
       
        #print(decoded)
-       if TO_FILE:
+       elif TO_FILE:
          with open(filename, 'w') as f:
+            #print("writing to file")
             json.dump(decoded, f, indent=4)
        
 
@@ -169,7 +180,7 @@ def parse_json( str ):
    return 0
 
 # get popup for user input
-username, apikey, latitude, longitude = get_user_input()
+username, apikey, latitude, longitude, range = get_user_input()
 
 # Create socket
 sock = socket.socket(socket.AF_INET)

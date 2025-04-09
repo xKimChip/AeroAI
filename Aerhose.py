@@ -147,15 +147,16 @@ def haversine(lat1, lon1, lat2, lon2):
    return distance
 
 # function to parse JSON data:
-def parse_json( str , latitude = latitude, longitude = longitude, range = range):
+def parse_json( str , latitude, longitude, range):
    try:
        # parse all data into dictionary decoded:
        decoded = json.loads(str)
-       
-       # Only looking for positional updates, other types seen "arrival", "flinfo"
+
+       # Only looking for positional updates, other types seen "arrival", "flinfo", "cancellation"
        if decoded["type"] != "position":
-          print(f"Skipped type: {decoded[type]}")
+          print(f"Skipped type: {decoded["type"]}")
           #return -1
+
 
        elif haversine(float(decoded["lat"]), float(decoded['lon']), float(latitude), float(longitude)) > float(range):
           print(f"Skipped position: {decoded['lat']}, {decoded['lon']}")
@@ -164,9 +165,10 @@ def parse_json( str , latitude = latitude, longitude = longitude, range = range)
       
        #print(decoded)
        elif TO_FILE:
-         with open(filename, 'a') as f:
+         with open(filename, 'w') as f:
             #print("writing to file")
             json.dump(decoded, f, indent=4)
+            #f.write(',\n')
        
 
        # compute the latency of this message:
@@ -177,7 +179,7 @@ def parse_json( str , latitude = latitude, longitude = longitude, range = range)
        print("JSON format error: ", sys.exc_info()[0])
        #print(str)
        #print(traceback.format_exc())
-   return 0
+       return 0
 
 def initiate_hose():
    # get popup for user input
@@ -219,7 +221,8 @@ def initiate_hose():
 
    # use "while True" for no limit in messages received
    count = 10000
-   while count > 0:
+   endless = False
+   while count > 0 or endless:
       try :
          # read line from file:
          inline = file.readline()
@@ -228,8 +231,9 @@ def initiate_hose():
             break
 
          # parse the line
-         if parse_json(inline) == 0:
+         if parse_json(inline, latitude, longitude, range) == 0 and not endless:
             count -= 1
+         
       except socket.error as e:
          print('Connection fail', e)
          print(traceback.format_exc())
@@ -239,3 +243,4 @@ def initiate_hose():
    # close the SSLSocket, will also close the underlying socket
    ssl_sock.close()
 
+initiate_hose()

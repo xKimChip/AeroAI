@@ -74,12 +74,12 @@ def minimal_preprocess(filepath: str):
     """Minimal preprocessing - only handle format issues"""
     with open(filepath, 'r') as f:
         data = json.load(f)
-    df = pd.DataFrame(data)
-
+    df = pd.DataFrame([data])
+    
     initial_count = len(df)
     # print(f"\nInitial entries: {initial_count}")
 
-    features = ['alt', 'gs', 'heading', 'lat', 'lon', 'vertRate']
+    features = ['alt', 'gs', 'heading', 'vertRate']
 
     # Convert to numeric, keeping all values
     for col in features:
@@ -93,8 +93,15 @@ def minimal_preprocess(filepath: str):
                 # print(f"Filled missing values with median: {median_val}")
 
     # Handle altChange encoding
+
+    
     df['altChange'] = df['altChange'].fillna(0)
+    if 'vertRate' not in df.columns:
+        df['vertRate'] = 0
+    
     df['altChange_encoded'] = df['altChange'].map({' ': 0, 'C': 1, 'D': -1}).fillna(0)
+
+    
 
     # Ensure time column exists
     if 'pitr' in df.columns and 'gs' in df.columns and len(df) > 1:
@@ -150,9 +157,9 @@ def create_synthetic_anomalies(df, num_anomalies=1000):
         {'type': 'erratic_heading', 'prob': 0.10},
 
         # Course & pattern anomalies (15% chance)
-        {'type': 'course_deviation', 'prob': 0.05},
-        {'type': 'unusual_loitering', 'prob': 0.05},
-        {'type': 'altitude_speed_fluctuations', 'prob': 0.05}
+        #{'type': 'course_deviation', 'prob': 0.05},
+        {'type': 'unusual_loitering', 'prob': 0.08},
+        {'type': 'altitude_speed_fluctuations', 'prob': 0.07}
     ]
 
     # Calculate cumulative probabilities
@@ -242,17 +249,17 @@ def create_synthetic_anomalies(df, num_anomalies=1000):
             anomaly['heading_change_rate'] = heading_change / time_diff
             anomalies.append(anomaly)
 
-        elif anomaly_type == 'course_deviation':
-            anomaly['anomaly_type'] = anomaly_type
-            # Significant deviation from expected route
-            deviation_magnitude = np.random.uniform(0.3, 0.7)  # roughly 20-40 NM
-            anomaly['lat'] = float(base_flight['lat']) + deviation_magnitude * np.random.choice([-1, 1])
-            anomaly['lon'] = float(base_flight['lon']) + deviation_magnitude * np.random.choice([-1, 1])
+        # elif anomaly_type == 'course_deviation':
+        #     anomaly['anomaly_type'] = anomaly_type
+        #     # Significant deviation from expected route
+        #     deviation_magnitude = np.random.uniform(0.3, 0.7)  # roughly 20-40 NM
+        #     anomaly['lat'] = float(base_flight['lat']) + deviation_magnitude * np.random.choice([-1, 1])
+        #     anomaly['lon'] = float(base_flight['lon']) + deviation_magnitude * np.random.choice([-1, 1])
 
-            time_diff = np.random.uniform(1, 2)  # Time in seconds
-            heading_change = np.random.uniform(20, 40)  # Course correction
-            anomaly['heading_change_rate'] = heading_change / time_diff  # Degrees per second
-            anomalies.append(anomaly)
+        #     time_diff = np.random.uniform(1, 2)  # Time in seconds
+        #     heading_change = np.random.uniform(20, 40)  # Course correction
+        #     anomaly['heading_change_rate'] = heading_change / time_diff  # Degrees per second
+        #     anomalies.append(anomaly)
 
         elif anomaly_type == 'unusual_loitering':
             anomaly['anomaly_type'] = anomaly_type
@@ -366,7 +373,7 @@ class AnomalyDetector:
             
             data_df['anomaly'] = anomalies_np
             #result = np.hstack((data, anomalies_np))
-            
+            print(data_df['anomaly'])
             
             #data['anomaly'] = anomalies_np
 
@@ -585,7 +592,7 @@ def analyze_anomaly_scores(anomaly_df, scores, detector_threshold):
 
 def flight_prediction(data, model, scaler, detector):
     """Predict anomalies in flight data using the trained model"""
-    features = ['alt', 'gs', 'heading', 'lat', 'lon', 'vertRate', 'altChange_encoded']
+    features = ['alt', 'gs', 'heading', 'vertRate', 'altChange_encoded']
     
     
     scaled = scaler.transform(data[features].values)
@@ -599,7 +606,7 @@ def main():
         df = minimal_preprocess('data/data_MVP.json')
         
         # 2. Prepare features
-        features = ['alt', 'gs', 'heading', 'lat', 'lon', 'vertRate', 'altChange_encoded']
+        features = ['alt', 'gs', 'heading', 'vertRate', 'altChange_encoded']
         # Add new engineered features if they exist
         if 'gs_change_rate' in df.columns:
             features.append('gs_change_rate')

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import json, socket, ssl, sys, time, zlib, math
+import json, socket, ssl, sys, time, zlib, math, signal
 from haversine import haversine, Unit
 import tkinter as tk
 
@@ -16,18 +16,33 @@ servername = "firehose.flightaware.com"
 filename = "data/hose_data.json"            # file to save the data
 TO_FILE = True                    # set to True to save the data to a file
 
+SIGINT_FLAG = False
+
+def sigkill_handler(signum, frame):
+   global SIGINT_FLAG
+   print(f"Received signal {signum}")
+   SIGINT_FLAG = True
+   return 0
+
+
 def get_user_input():
    global username, apikey, latitude, longitude
 
    root = tk.Tk()
-   root.geometry("200x400")
+   root.geometry("200x450")
    root.title("AeroHose")
    
    username_var = tk.StringVar(root, value="RTXDC")
    apikey_var = tk.StringVar(root, value="***REMOVED***")
-   latitude_var = tk.StringVar(root, value="37.7749")
-   longitude_var = tk.StringVar(root, value="46.53798")
-   range_var = tk.StringVar(root, value="300")
+   latitude_var = tk.DoubleVar(root, value=37.7749)
+   longitude_var = tk.DoubleVar(root, value=46.53798)
+   range_var = tk.IntVar(root, value=300)
+   count_var = tk.IntVar(root, value=2000)
+   endless_var = tk.BooleanVar(root, value=False)
+   append_var = tk.BooleanVar(root, value=False)
+   # endless_var = tk.StringVar(root, value="False")
+   # append_var = tk.StringVar(root, value="False")
+   
    
    values = {}
    
@@ -38,6 +53,9 @@ def get_user_input():
       values['latitude'] = latitude_var.get()
       values['longitude']= longitude_var.get()
       values['range'] = range_var.get()
+      values['count'] = count_var.get()
+      values['endless'] = endless_var.get()
+      values['append'] = append_var.get()
 
       # Print values for debugging
       print(f"Username: {values['username']}")
@@ -45,6 +63,9 @@ def get_user_input():
       print(f"Latitude: {values['latitude']}")
       print(f"Longitude: {values['longitude']}")
       print(f"Range: {values['range']}")
+      print(f"Count: {values['count']}")
+      print(f"Endless: {values['endless']}")
+      print(f"Append: {values['append']}")
       
       root.destroy()  # Close the GUI after submission
    
@@ -80,15 +101,37 @@ def get_user_input():
    range_label.pack(padx=10, pady=5)
    ran = tk.Entry(root, textvariable=range_var)
    ran.pack(padx=10, pady=5)
+   
+   # Count Field
+   
+   count_frame = tk.Frame(root)
+   count_frame.pack(padx=10, pady=5, fill=tk.X)
 
-
+   count_label = tk.Label(count_frame, text="Count", font=("Helvetica", 8))
+   count_label.pack(padx=(0, 0))
+   
+   # Endless checkbox
+   endless_checkbox = tk.Checkbutton(count_frame, text="Endless", variable=endless_var)
+   endless_checkbox.pack(side=tk.RIGHT)
+   
+   count_entry = tk.Entry(count_frame, width=10, textvariable=count_var)
+   count_entry.pack(side=tk.RIGHT, padx=0, pady=0)
+   
+   sub_app_frame = tk.Frame(root)
+   sub_app_frame.pack(padx=10, pady=0, fill=tk.X)
+   
+   append_checkbox = tk.Checkbutton(sub_app_frame, text="Append", variable=append_var)
+   append_checkbox.pack(side=tk.RIGHT)
+   
    # Submit button
-   submit_button = tk.Button(root, text="Submit", command=submit_values,)
-   submit_button.pack(pady=10)
+   submit_button = tk.Button(sub_app_frame, text="Submit", command=submit_values)
+   submit_button.pack(side=tk.RIGHT, padx=0, pady=10)
+   
+
    
    root.mainloop()
    
-   return values['username'], values['apikey'], values['latitude'], values['longitude'], values['range']
+   return values['username'], values['apikey'], values['latitude'], values['longitude'], values['range'], values['count'], values['endless'], values['append']
 
    
 
@@ -147,43 +190,48 @@ def haversine(lat1, lon1, lat2, lon2):
    return distance
 
 # function to parse JSON data:
-def parse_json( str , latitude, longitude, range):
+def parse_json( str , output, latitude, longitude, range, append):
+   global SIGINT_FLAG
    try:
        # parse all data into dictionary decoded:
        decoded = json.loads(str)
 
-       # Only looking for positional updates, other types seen "arrival", "flinfo", "cancellation"
+       # Only looking for positional updates, other types seen "arrival", "flinfo", "cancellation", "surface_offblock", "power_on", "departure", ""
        if decoded["type"] != "position":
           print(f"Skipped type: {decoded["type"]}")
-          #return -1
+          return -1
 
 
-       elif haversine(float(decoded["lat"]), float(decoded['lon']), float(latitude), float(longitude)) > float(range):
+       elif haversine(float(decoded["lat"]), float(decoded['lon']), latitude, longitude) > range:
           print(f"Skipped position: {decoded['lat']}, {decoded['lon']}")
-          #return -1
+          return -1
          
       
        #print(decoded)
-       elif TO_FILE:
-         with open(filename, 'w') as f:
-            #print("writing to file")
-            json.dump(decoded, f, indent=4)
-            #f.write(',\n')
-       
+       elif append and output is not None:
+            json_str = json.dumps(decoded, indent="\t")
+            output.write('\t' + json_str.replace('}', '\t}'))
+            #json.dump(decoded, output, indent="\t")
+       elif not append:
+          with open(filename, 'w') as output:
+            json.dump([decoded], output, indent="\t")
+ 
 
        # compute the latency of this message:
        clocknow = time.time()
        diff = clocknow - int(decoded['pitr'])
        #print("diff = {0:.2f} s\n".format(diff))
+       return 0
    except (ValueError, KeyError, TypeError):
        print("JSON format error: ", sys.exc_info()[0])
        #print(str)
        #print(traceback.format_exc())
-       return 0
+       return -1
 
 def initiate_hose():
    # get popup for user input
-   username, apikey, latitude, longitude, range = get_user_input()
+   username, apikey, latitude, longitude, range, count, endless, append = get_user_input()
+   global SIGINT_FLAG
 
    # Create socket
    sock = socket.socket(socket.AF_INET)
@@ -217,11 +265,20 @@ def initiate_hose():
       file = ssl_sock.makefile('r')
 
 
+   # Catch SIGKILL
 
 
    # use "while True" for no limit in messages received
-   count = 10000
-   endless = False
+   output = None
+   
+   if TO_FILE and append:
+      output = open(filename, 'w')
+      output.write("[\n")
+      
+   if signal.signal(signal.SIGINT, sigkill_handler) == 0:
+      print()
+
+   
    while count > 0 or endless:
       try :
          # read line from file:
@@ -231,13 +288,29 @@ def initiate_hose():
             break
 
          # parse the line
-         if parse_json(inline, latitude, longitude, range) == 0 and not endless:
-            count -= 1
+         
+         if parse_json(inline, output, latitude, longitude, range, append) == 0 and not (append and SIGINT_FLAG):
+
+            if append and (endless or count > 1):
+               output.write(",\n")   
+            if not endless:
+               count -= 1
+         elif SIGINT_FLAG and append:
+               count = 1
+               endless = False
+               SIGINT_FLAG = False
+         elif SIGINT_FLAG:
+            print("SIGINT received, exiting...")
+            break
          
       except socket.error as e:
          print('Connection fail', e)
          print(traceback.format_exc())
-
+   if append:
+      output.write('\n]')
+      output.close()
+   
+   
    # wait for user input to end
    # input("\n Press Enter to exit...");
    # close the SSLSocket, will also close the underlying socket

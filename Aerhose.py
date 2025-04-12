@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import json, socket, ssl, sys, time, zlib, math, signal
-from haversine import haversine, Unit
 import tkinter as tk
 
 

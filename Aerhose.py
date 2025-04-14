@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 
-import json, socket, ssl, sys, time, zlib, math, signal
+import json, socket, ssl, sys, time, zlib, math, signal, time
 import tkinter as tk
+from datetime import datetime
 
 
 username = ""
@@ -28,7 +29,7 @@ def get_user_input():
    global username, apikey, latitude, longitude
 
    root = tk.Tk()
-   root.geometry("200x450")
+   root.geometry("200x500")
    root.title("AeroHose")
    
    username_var = tk.StringVar(root, value="RTXDC")
@@ -36,9 +37,10 @@ def get_user_input():
    latitude_var = tk.DoubleVar(root, value=37.7749)
    longitude_var = tk.DoubleVar(root, value=46.53798)
    range_var = tk.IntVar(root, value=300)
-   count_var = tk.IntVar(root, value=2000)
+   count_var = tk.IntVar(root, value=0)
    endless_var = tk.BooleanVar(root, value=False)
    append_var = tk.BooleanVar(root, value=False)
+   duration_var = tk.IntVar(root, value=0)
    # endless_var = tk.StringVar(root, value="False")
    # append_var = tk.StringVar(root, value="False")
    
@@ -55,6 +57,7 @@ def get_user_input():
       values['count'] = count_var.get()
       values['endless'] = endless_var.get()
       values['append'] = append_var.get()
+      values['duration'] = duration_var.get()
 
       # Print values for debugging
       print(f"Username: {values['username']}")
@@ -65,6 +68,7 @@ def get_user_input():
       print(f"Count: {values['count']}")
       print(f"Endless: {values['endless']}")
       print(f"Append: {values['append']}")
+      print(f"Time: {values['duration']}")
       
       root.destroy()  # Close the GUI after submission
    
@@ -101,26 +105,42 @@ def get_user_input():
    ran = tk.Entry(root, textvariable=range_var)
    ran.pack(padx=10, pady=5)
    
-   # Count Field
+   # Label Frame
+   label_frame = tk.Frame(root)
+   label_frame.pack(padx=10, pady=5, fill=tk.X)
+
+   
+   count_label = tk.Label(label_frame, text="Count", font=("Helvetica", 8))
+   count_label.pack(side=tk.RIGHT, padx=(0,100))
+      
+   time_label = tk.Label(label_frame, text ="Time (s)", font=("Helvetica", 8))
+   time_label.pack(side=tk.RIGHT)
+
+
    
    count_frame = tk.Frame(root)
    count_frame.pack(padx=10, pady=5, fill=tk.X)
 
-   count_label = tk.Label(count_frame, text="Count", font=("Helvetica", 8))
-   count_label.pack(padx=(0, 0))
-   
    # Endless checkbox
    endless_checkbox = tk.Checkbutton(count_frame, text="Endless", variable=endless_var)
    endless_checkbox.pack(side=tk.RIGHT)
-   
+
+   # Count Field
    count_entry = tk.Entry(count_frame, width=10, textvariable=count_var)
    count_entry.pack(side=tk.RIGHT, padx=0, pady=0)
+      
+   
+   time_entry = tk.Entry(count_frame, width=10, textvariable=duration_var)
+   time_entry.pack(side=tk.RIGHT, padx=0, pady=0)
+   
    
    sub_app_frame = tk.Frame(root)
    sub_app_frame.pack(padx=10, pady=0, fill=tk.X)
    
    append_checkbox = tk.Checkbutton(sub_app_frame, text="Append", variable=append_var)
    append_checkbox.pack(side=tk.RIGHT)
+
+   
    
    # Submit button
    submit_button = tk.Button(sub_app_frame, text="Submit", command=submit_values)
@@ -130,7 +150,7 @@ def get_user_input():
    
    root.mainloop()
    
-   return values['username'], values['apikey'], values['latitude'], values['longitude'], values['range'], values['count'], values['endless'], values['append']
+   return values['username'], values['apikey'], values['latitude'], values['longitude'], values['range'], values['count'], values['endless'], values['append'],values['duration']
 
    
 
@@ -229,7 +249,7 @@ def parse_json( str , output, latitude, longitude, range, append):
 
 def initiate_hose():
    # get popup for user input
-   username, apikey, latitude, longitude, range, count, endless, append = get_user_input()
+   username, apikey, latitude, longitude, range, count, endless, append, duration = get_user_input()
    global SIGINT_FLAG
 
    # Create socket
@@ -276,9 +296,16 @@ def initiate_hose():
       
    if signal.signal(signal.SIGINT, sigkill_handler) == 0:
       print()
-
+   if time == 0:
+      end_time = time.time() * 2
+   else:
+      start_time = time.time()
+      end_time = start_time + duration
+      print(f"Start time: {start_time}")
+      print(f"Approximate End time: {end_time}")
    
-   while count > 0 or endless:
+   
+   while count > 0 or endless or time.time() < end_time:
       try :
          # read line from file:
          inline = file.readline()
@@ -308,7 +335,8 @@ def initiate_hose():
    if append:
       output.write('\n]')
       output.close()
-   
+   print(f"Approximate End_time: {datetime.fromtimestamp(end_time)}")
+   print(f"Actual End_time: {datetime.fromtimestamp(time.time())}")
    
    # wait for user input to end
    # input("\n Press Enter to exit...");

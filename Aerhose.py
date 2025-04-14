@@ -315,15 +315,16 @@ def initiate_hose():
          # parse the line
          
          if parse_json(inline, output, latitude, longitude, range, append) == 0 and not (append and SIGINT_FLAG):
-
-            if append and (endless or count > 1 or time.time() < end_time):
+            time_bool = time.time() < end_time
+            if append and (endless or count > 1 or time_bool):
                output.write(",\n")   
-            if not endless:
+            if not endless and count != 0:
                count -= 1
          elif SIGINT_FLAG and append:
                count = 1
                endless = False
                SIGINT_FLAG = False
+               end_time = 0
          elif SIGINT_FLAG:
             print("SIGINT received, exiting...")
             break

@@ -301,8 +301,7 @@ def initiate_hose():
    else:
       start_time = time.time()
       end_time = start_time + duration
-      print(f"Start time: {start_time}")
-      print(f"Approximate End time: {end_time}")
+      print(f"Start time: {datetime.fromtimestamp(start_time)}")
    
    
    while count > 0 or endless or time.time() < end_time:
@@ -317,7 +316,7 @@ def initiate_hose():
          
          if parse_json(inline, output, latitude, longitude, range, append) == 0 and not (append and SIGINT_FLAG):
 
-            if append and (endless or count > 1):
+            if append and (endless or count > 1 or time.time() < end_time):
                output.write(",\n")   
             if not endless:
                count -= 1

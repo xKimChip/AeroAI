@@ -230,6 +230,8 @@ def parse_json( str , output, latitude, longitude, range, append):
        elif append and output is not None:
             json_str = json.dumps(decoded, indent="\t")
             output.write('\t' + json_str.replace('}', '\t}'))
+            # throttle the output to avoid overwhelming the server and too many data points.
+            time.sleep(0.5)
             #json.dump(decoded, output, indent="\t")
        elif not append:
           with open(filename, 'w') as output:

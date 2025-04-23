@@ -228,7 +228,7 @@ def parse_json( str , output, latitude, longitude, range, append):
       
        #print(decoded)
        elif append and output is not None:
-            json_str = json.dumps(decoded, indent="\t")
+            json_str = json.dumps(decoded, indent="\t\t")
             output.write('\t' + json_str.replace('}', '\t}'))
             # throttle the output to avoid overwhelming the server and too many data points.
             time.sleep(0.5)
@@ -323,10 +323,11 @@ def initiate_hose():
             if not endless and count != 0:
                count -= 1
          elif SIGINT_FLAG and append:
+               output.write(",\n") 
                count = 1
                endless = False
                SIGINT_FLAG = False
-               end_time = 0
+               end_time = time.time()
          elif SIGINT_FLAG:
             print("SIGINT received, exiting...")
             break

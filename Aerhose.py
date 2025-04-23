@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 
-import json, socket, ssl, sys, time, zlib, math, signal, time
+import json, socket, ssl, sys, time, zlib, math, signal, time#, redis
 import tkinter as tk
 from datetime import datetime
+
 
 
 username = ""
@@ -18,6 +19,9 @@ TO_FILE = True                    # set to True to save the data to a file
 
 SIGINT_FLAG = False
 
+#r = redis.Redis(host='localhost', port=6379, db=0)
+LIVE = True
+
 def sigkill_handler(signum, frame):
    global SIGINT_FLAG
    print(f"Received signal {signum}")
@@ -29,7 +33,7 @@ def get_user_input():
    global username, apikey, latitude, longitude
 
    root = tk.Tk()
-   root.geometry("200x500")
+   root.geometry("300x500")
    root.title("AeroHose")
    
    username_var = tk.StringVar(root, value="RTXDC")
@@ -152,7 +156,10 @@ def get_user_input():
    
    return values['username'], values['apikey'], values['latitude'], values['longitude'], values['range'], values['count'], values['endless'], values['append'],values['duration']
 
-   
+# def send_to_redis(data):
+#    # hash set an id with the decoded data
+#    r.hset(data['id'], "ts", data['pitr'] , "latitude", data['lat'], "longitude", data['lon'], "altitude", data['alt'], "ground_speed", data['ground_speed'], "heading", data['heading'])
+#    r.hexpire(data['id'], 60) # set expiration time to 60 seconds
 
 class InflateStream:
    "A wrapper for a socket carrying compressed data that does streaming decompression"
@@ -224,11 +231,11 @@ def parse_json( str , output, latitude, longitude, range, append):
        elif haversine(float(decoded["lat"]), float(decoded['lon']), latitude, longitude) > range:
           print(f"Skipped position: {decoded['lat']}, {decoded['lon']}")
           return -1
-         
-      
+      #  elif LIVE:
+      #     send_to_redis(decoded)   
        #print(decoded)
        elif append and output is not None:
-            json_str = json.dumps(decoded, indent="\t")
+            json_str = json.dumps(decoded, indent="\t\t")
             output.write('\t' + json_str.replace('}', '\t}'))
             # throttle the output to avoid overwhelming the server and too many data points.
             time.sleep(0.5)

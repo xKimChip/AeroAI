@@ -160,15 +160,18 @@ def get_user_input():
    return values['username'], values['apikey'], values['latitude'], values['longitude'], values['range'], values['count'], values['endless'], values['append'],values['duration']
 
 def send_to_redis(data):
-   # hash set an id with the decoded data
-   r.hset(data['id'], mapping={"ts": data['pitr'],
-      "latitude": data['lat'],
-      "longitude": data['lon'],
-      "altitude": data['alt'],
-      "ground_speed": data['gs'],
-      "heading": data['heading']
-   })   
-   r.expire(data['id'], EXPIRE_TIME) # set expiration time to 90 seconds
+   # use a list to get the recent history of a data point.
+   data_vals = {
+      'pitr': data['pitr'],
+      'lat': data['lat'],
+      'lon': data['lon'],
+      'alt': data['alt'],
+      'gs': data['gs'],
+      'heading': data['heading']
+   }
+   r.lpush(data['id'], json.dumps(data_vals)) # push the columns of data to the list
+   r.ltrim(data['id'], 0, 10) # keep only the last 10 items
+   r.expire(data['id'], EXPIRE_TIME, gt=True) # set expiration time to 120 seconds
 
 class InflateStream:
    "A wrapper for a socket carrying compressed data that does streaming decompression"
@@ -233,16 +236,16 @@ def parse_json( str , output, latitude, longitude, range, append):
 
       # Only looking for positional updates, other types seen "arrival", "flinfo", "cancellation", "surface_offblock", "power_on", "departure", ""
       if decoded["type"] != "position":
-         print(f"Skipped type: {decoded["type"]}")
+         #print(f"Skipped type: {decoded["type"]}")
          return -1
       elif haversine(float(decoded["lat"]), float(decoded['lon']), latitude, longitude) > range:
-         print(f"Skipped position: {decoded['lat']}, {decoded['lon']}")
+         #print(f"Skipped position: {decoded['lat']}, {decoded['lon']}")
          return -1
       elif append and output is not None:
-         # if r.exists(decoded['id']) == 2 and r.ttl(decoded['id']) > REENTRY_TIME:
-         #    print(f"Skipped item: {decoded['id']}")
-         #    return -1
-         # send_to_redis(decoded)
+         if r.exists(decoded['id']) == 2 and r.ttl(decoded['id']) > REENTRY_TIME:
+            print(f"Skipped item: {decoded['id']}")
+            return -1
+         send_to_redis(decoded)
          
          json_str = json.dumps(decoded, indent="\t\t")
          output.write('\t' + json_str.replace('}', '\t}'))

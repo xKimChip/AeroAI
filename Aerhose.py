@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import json, socket, ssl, sys, time, zlib, math, signal, time#, redis
+import json, socket, ssl, sys, time, zlib, math, signal, time, redis
 import tkinter as tk
 from datetime import datetime
 
@@ -19,8 +19,11 @@ TO_FILE = True                    # set to True to save the data to a file
 
 SIGINT_FLAG = False
 
-#r = redis.Redis(host='localhost', port=6379, db=0)
-LIVE = True
+r = redis.Redis(host='localhost', port=6379, db=0)
+COLLECT = True
+EXPIRE_TIME = 120 # seconds
+REENTRY_TIME = 105 # seconds
+
 
 def sigkill_handler(signum, frame):
    global SIGINT_FLAG
@@ -64,8 +67,8 @@ def get_user_input():
       values['duration'] = duration_var.get()
 
       # Print values for debugging
-      print(f"Username: {values['username']}")
-      print(f"API Key: {values['apikey']}")
+      #print(f"Username: {values['username']}")
+      #print(f"API Key: {values['apikey']}")
       print(f"Latitude: {values['latitude']}")
       print(f"Longitude: {values['longitude']}")
       print(f"Range: {values['range']}")
@@ -89,7 +92,7 @@ def get_user_input():
    # API Key field
    passkey_label = tk.Label(root, text="API Key", font=("Helvetica", 8))
    passkey_label.pack(padx=10, pady=0)
-   passkey = tk.Entry(root, width=20, textvariable=apikey_var)
+   passkey = tk.Entry(root, width=1, textvariable=apikey_var)
    passkey.pack(padx=10, pady=5)
 
    # Latitude field
@@ -156,10 +159,16 @@ def get_user_input():
    
    return values['username'], values['apikey'], values['latitude'], values['longitude'], values['range'], values['count'], values['endless'], values['append'],values['duration']
 
-# def send_to_redis(data):
-#    # hash set an id with the decoded data
-#    r.hset(data['id'], "ts", data['pitr'] , "latitude", data['lat'], "longitude", data['lon'], "altitude", data['alt'], "ground_speed", data['ground_speed'], "heading", data['heading'])
-#    r.hexpire(data['id'], 60) # set expiration time to 60 seconds
+def send_to_redis(data):
+   # hash set an id with the decoded data
+   r.hset(data['id'], mapping={"ts": data['pitr'],
+      "latitude": data['lat'],
+      "longitude": data['lon'],
+      "altitude": data['alt'],
+      "ground_speed": data['gs'],
+      "heading": data['heading']
+   })   
+   r.expire(data['id'], EXPIRE_TIME) # set expiration time to 90 seconds
 
 class InflateStream:
    "A wrapper for a socket carrying compressed data that does streaming decompression"
@@ -219,37 +228,34 @@ def haversine(lat1, lon1, lat2, lon2):
 def parse_json( str , output, latitude, longitude, range, append):
    global SIGINT_FLAG
    try:
-       # parse all data into dictionary decoded:
-       decoded = json.loads(str)
+      # parse all data into dictionary decoded:
+      decoded = json.loads(str)
 
-       # Only looking for positional updates, other types seen "arrival", "flinfo", "cancellation", "surface_offblock", "power_on", "departure", ""
-       if decoded["type"] != "position":
-          print(f"Skipped type: {decoded["type"]}")
-          return -1
-
-
-       elif haversine(float(decoded["lat"]), float(decoded['lon']), latitude, longitude) > range:
-          print(f"Skipped position: {decoded['lat']}, {decoded['lon']}")
-          return -1
-      #  elif LIVE:
-      #     send_to_redis(decoded)   
-       #print(decoded)
-       elif append and output is not None:
-            json_str = json.dumps(decoded, indent="\t\t")
-            output.write('\t' + json_str.replace('}', '\t}'))
-            # throttle the output to avoid overwhelming the server and too many data points.
-            time.sleep(0.5)
-            #json.dump(decoded, output, indent="\t")
-       elif not append:
-          with open(filename, 'w') as output:
+      # Only looking for positional updates, other types seen "arrival", "flinfo", "cancellation", "surface_offblock", "power_on", "departure", ""
+      if decoded["type"] != "position":
+         print(f"Skipped type: {decoded["type"]}")
+         return -1
+      elif haversine(float(decoded["lat"]), float(decoded['lon']), latitude, longitude) > range:
+         print(f"Skipped position: {decoded['lat']}, {decoded['lon']}")
+         return -1
+      elif append and output is not None:
+         # if r.exists(decoded['id']) == 2 and r.ttl(decoded['id']) > REENTRY_TIME:
+         #    print(f"Skipped item: {decoded['id']}")
+         #    return -1
+         # send_to_redis(decoded)
+         
+         json_str = json.dumps(decoded, indent="\t\t")
+         output.write('\t' + json_str.replace('}', '\t}'))
+      elif not append:
+         with open(filename, 'w') as output:
             json.dump([decoded], output, indent="\t")
- 
 
-       # compute the latency of this message:
-       clocknow = time.time()
-       diff = clocknow - int(decoded['pitr'])
-       #print("diff = {0:.2f} s\n".format(diff))
-       return 0
+
+      # compute the latency of this message:
+      clocknow = time.time()
+      diff = clocknow - int(decoded['pitr'])
+      #print("diff = {0:.2f} s\n".format(diff))
+      return 0
    except (ValueError, KeyError, TypeError):
        print("JSON format error: ", sys.exc_info()[0])
        #print(str)
@@ -330,7 +336,7 @@ def initiate_hose():
             if not endless and count != 0:
                count -= 1
          elif SIGINT_FLAG and append:
-               output.write(",\n") 
+               #output.write(",\n") 
                count = 1
                endless = False
                SIGINT_FLAG = False

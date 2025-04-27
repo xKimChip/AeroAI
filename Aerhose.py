@@ -21,8 +21,8 @@ SIGINT_FLAG = False
 r = redis.Redis(host='localhost', port=6379, db=0)
 #r = redis.Redis(host='redis-14815.c289.us-west-1-2.ec2.redns.redis-cloud.com', port=14815, db=0)
 COLLECT = True
-EXPIRE_TIME = 120 # seconds
-REENTRY_TIME = 105 # seconds
+EXPIRE_TIME = 300 # seconds
+REENTRY_TIME = 280 # seconds
 
 
 def sigkill_handler(signum, frame):
@@ -170,11 +170,12 @@ def send_to_redis(data, eTime=EXPIRE_TIME):
       'heading': data['heading']
    }
    key = data['id']
-   pipe = r.pipeline()
-   pipe.lpush(key, json.dumps(data_vals)) # push the columns of data to the list
-   #pipe.expire(key, 120) # set expiration time to 120 seconds
-   pipe.ltrim(key, 0, 10) # keep only the last 10 items
-   pipe.execute()
+   r.lpush(key, json.dumps(data_vals)) # push the columns of data to the list
+   if r.ttl(key) == -1: # set expiration time to 120 seconds\
+      r.expire(key, eTime)
+   else:
+      r.expire(key, eTime, xx=True) 
+   r.ltrim(key, 0, 10) # keep only the last 10 items
 
 class InflateStream:
    "A wrapper for a socket carrying compressed data that does streaming decompression"

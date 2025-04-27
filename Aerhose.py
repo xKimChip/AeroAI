@@ -18,8 +18,8 @@ filename = "data/hose_data.json"            # file to save the data
 TO_FILE = True                    # set to True to save the data to a file
 
 SIGINT_FLAG = False
-
 r = redis.Redis(host='localhost', port=6379, db=0)
+#r = redis.Redis(host='redis-14815.c289.us-west-1-2.ec2.redns.redis-cloud.com', port=14815, db=0)
 COLLECT = True
 EXPIRE_TIME = 120 # seconds
 REENTRY_TIME = 105 # seconds
@@ -159,19 +159,22 @@ def get_user_input():
    
    return values['username'], values['apikey'], values['latitude'], values['longitude'], values['range'], values['count'], values['endless'], values['append'],values['duration']
 
-def send_to_redis(data):
+def send_to_redis(data, eTime=EXPIRE_TIME):
    # use a list to get the recent history of a data point.
    data_vals = {
       'pitr': data['pitr'],
       'lat': data['lat'],
       'lon': data['lon'],
-      'alt': data['alt'],
+      #'alt': data['alt'],
       'gs': data['gs'],
       'heading': data['heading']
    }
-   r.lpush(data['id'], json.dumps(data_vals)) # push the columns of data to the list
-   r.ltrim(data['id'], 0, 10) # keep only the last 10 items
-   r.expire(data['id'], EXPIRE_TIME, gt=True) # set expiration time to 120 seconds
+   key = data['id']
+   pipe = r.pipeline()
+   pipe.lpush(key, json.dumps(data_vals)) # push the columns of data to the list
+   #pipe.expire(key, 120) # set expiration time to 120 seconds
+   pipe.ltrim(key, 0, 10) # keep only the last 10 items
+   pipe.execute()
 
 class InflateStream:
    "A wrapper for a socket carrying compressed data that does streaming decompression"
@@ -229,8 +232,7 @@ def haversine(lat1, lon1, lat2, lon2):
 
 # function to parse JSON data:
 def parse_json( str , output, latitude, longitude, range, append):
-   global SIGINT_FLAG
-   try:
+   #try:
       # parse all data into dictionary decoded:
       decoded = json.loads(str)
 
@@ -241,12 +243,16 @@ def parse_json( str , output, latitude, longitude, range, append):
       elif haversine(float(decoded["lat"]), float(decoded['lon']), latitude, longitude) > range:
          #print(f"Skipped position: {decoded['lat']}, {decoded['lon']}")
          return -1
-      elif append and output is not None:
-         if r.exists(decoded['id']) == 2 and r.ttl(decoded['id']) > REENTRY_TIME:
-            print(f"Skipped item: {decoded['id']}")
-            return -1
-         send_to_redis(decoded)
+      elif r.ttl(decoded['id']) > REENTRY_TIME:
+         print(f"Skipped item: {decoded['id']}")
+         return -1
+      elif not decoded.get('alt') or not decoded.get('gs') :
+         #print(f"Skipped item: {decoded['id']}")
+         return -1
          
+      # Send data to redis first 
+      send_to_redis(decoded)
+      if append and output is not None:
          json_str = json.dumps(decoded, indent="\t\t")
          output.write('\t' + json_str.replace('}', '\t}'))
       elif not append:
@@ -259,11 +265,11 @@ def parse_json( str , output, latitude, longitude, range, append):
       diff = clocknow - int(decoded['pitr'])
       #print("diff = {0:.2f} s\n".format(diff))
       return 0
-   except (ValueError, KeyError, TypeError):
-       print("JSON format error: ", sys.exc_info()[0])
-       #print(str)
-       #print(traceback.format_exc())
-       return -1
+   # except (ValueError, KeyError, TypeError):
+   #     print("JSON format error: ", sys.exc_info()[0])
+   #     #print(str)
+   #     #print(traceback.format_exc())
+   #     return -1
 
 def initiate_hose():
    # get popup for user input
@@ -313,7 +319,7 @@ def initiate_hose():
       output.write("[\n")
       
    if signal.signal(signal.SIGINT, sigkill_handler) == 0:
-      print()
+      print("SIGINT received")
    if time == 0:
       end_time = time.time() * 2
    else:
@@ -331,22 +337,16 @@ def initiate_hose():
             break
 
          # parse the line
-         
-         if parse_json(inline, output, latitude, longitude, range, append) == 0 and not (append and SIGINT_FLAG):
-            time_bool = time.time() < end_time
-            if append and (endless or count > 1 or time_bool):
-               output.write(",\n")   
+         if parse_json(inline, output, latitude, longitude, range, append) == 0:
+            if SIGINT_FLAG:
+               print("SIGINT received, exiting...")
+               break
+            elif append:
+               time_bool = time.time() < end_time
+               if (endless or count > 1 or time_bool):
+                  output.write(",\n")   
             if not endless and count != 0:
                count -= 1
-         elif SIGINT_FLAG and append:
-               #output.write(",\n") 
-               count = 1
-               endless = False
-               SIGINT_FLAG = False
-               end_time = time.time()
-         elif SIGINT_FLAG:
-            print("SIGINT received, exiting...")
-            break
          
       except socket.error as e:
          print('Connection fail', e)

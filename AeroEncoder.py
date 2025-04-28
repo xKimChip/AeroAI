@@ -26,7 +26,7 @@ class EnhancedFlightPrediction(nn.Module):
         # Build encoder layers
         encoder_layers = []
         prev_size = input_size
-        for h_size in hidden_sizes[:len(hidden_sizes)//2 + 1]:
+        for h_size in hidden_sizes[:len(hidden_sizes) // 2 + 1]:
             encoder_layers.append(nn.Linear(prev_size, h_size))
             encoder_layers.append(nn.BatchNorm1d(h_size))
             encoder_layers.append(nn.LeakyReLU(0.2))
@@ -37,7 +37,7 @@ class EnhancedFlightPrediction(nn.Module):
 
         # Build decoder layers (reverse of encoder)
         decoder_layers = []
-        for h_size in hidden_sizes[len(hidden_sizes)//2 + 1:]:
+        for h_size in hidden_sizes[len(hidden_sizes) // 2 + 1:]:
             decoder_layers.append(nn.Linear(prev_size, h_size))
             decoder_layers.append(nn.BatchNorm1d(h_size))
             decoder_layers.append(nn.LeakyReLU(0.2))
@@ -70,16 +70,17 @@ class EnhancedFlightPrediction(nn.Module):
         """Get encoded representation"""
         return self.encoder(x)
 
+
 def minimal_preprocess(filepath: str):
     """Minimal preprocessing - only handle format issues"""
     with open(filepath, 'r') as f:
         data = json.load(f)
-    df = pd.DataFrame([data])
-    
-    initial_count = len(df)
-    # print(f"\nInitial entries: {initial_count}")
+    df = pd.DataFrame(data)
 
-    features = ['alt', 'gs', 'heading', 'vertRate']
+    initial_count = len(df)
+    print(f"\nInitial entries: {initial_count}")
+
+    features = ['alt', 'gs', 'heading', 'lat', 'lon', 'vertRate', 'pitr']  # Added 'pitr' to the conversion list
 
     # Convert to numeric, keeping all values
     for col in features:
@@ -87,24 +88,20 @@ def minimal_preprocess(filepath: str):
             df[col] = pd.to_numeric(df[col], errors='coerce')
             nan_count = df[col].isna().sum()
             if nan_count > 0:
-                # print(f"Found {nan_count} missing/invalid values in {col}")
                 median_val = df[col].median()
                 df[col] = df[col].fillna(median_val)
-                # print(f"Filled missing values with median: {median_val}")
 
     # Handle altChange encoding
-
-    
     df['altChange'] = df['altChange'].fillna(0)
+
     if 'vertRate' not in df.columns:
         df['vertRate'] = 0
-    
+
     df['altChange_encoded'] = df['altChange'].map({' ': 0, 'C': 1, 'D': -1}).fillna(0)
 
-    
-
-    # Ensure time column exists
+    # Ensure time column exists and is numeric
     if 'pitr' in df.columns and 'gs' in df.columns and len(df) > 1:
+        # Make sure pitr is numeric before sorting and calculations
         df = df.sort_values(['id', 'pitr']).reset_index(drop=True)
 
         # Compute time difference in seconds
@@ -122,10 +119,6 @@ def minimal_preprocess(filepath: str):
         df['gs_change_rate'] = df['gs_change_rate'].fillna(0)
         df['heading_change_rate'] = df['heading_change_rate'].fillna(0)
 
-    # print(f"\nFeature engineering complete")
-    # print(df)
-
-    # print(f"\nFinal entries: {len(df)}")
     return df
 
 def create_synthetic_anomalies(df, num_anomalies=1000):
@@ -157,7 +150,7 @@ def create_synthetic_anomalies(df, num_anomalies=1000):
         {'type': 'erratic_heading', 'prob': 0.10},
 
         # Course & pattern anomalies (15% chance)
-        #{'type': 'course_deviation', 'prob': 0.05},
+        # {'type': 'course_deviation', 'prob': 0.05},
         {'type': 'unusual_loitering', 'prob': 0.08},
         {'type': 'altitude_speed_fluctuations', 'prob': 0.07}
     ]
@@ -180,7 +173,7 @@ def create_synthetic_anomalies(df, num_anomalies=1000):
             anomaly['anomaly_type'] = anomaly_type
             # Commercial aircraft flying faster than 600 knots
             anomaly['gs'] = np.random.uniform(600, 1000)
-            #anomaly['gs_change'] = np.random.uniform(50, 100)  # Accelerating
+            # anomaly['gs_change'] = np.random.uniform(50, 100)  # Accelerating
             anomalies.append(anomaly)
 
         elif anomaly_type == 'low_speed_high_alt':
@@ -188,7 +181,7 @@ def create_synthetic_anomalies(df, num_anomalies=1000):
             # Aircraft flying below 200 knots at high altitude (stall risk)
             anomaly['gs'] = np.random.uniform(100, 200)
             anomaly['alt'] = np.random.uniform(35000, 40000)
-            #anomaly['gs_change'] = np.random.uniform(-50, -20)  # Decelerating
+            # anomaly['gs_change'] = np.random.uniform(-50, -20)  # Decelerating
             anomalies.append(anomaly)
 
         elif anomaly_type == 'sudden_speed_change':
@@ -208,7 +201,7 @@ def create_synthetic_anomalies(df, num_anomalies=1000):
             anomaly['anomaly_type'] = anomaly_type
             # Commercial aircraft flying above 45,000 ft
             anomaly['alt'] = np.random.uniform(45000, 60000)
-            #anomaly['vertRate'] = np.random.uniform(1000, 2000)  # Still climbing
+            # anomaly['vertRate'] = np.random.uniform(1000, 2000)  # Still climbing
             anomalies.append(anomaly)
 
         elif anomaly_type == 'low_altitude_high_speed':
@@ -216,14 +209,14 @@ def create_synthetic_anomalies(df, num_anomalies=1000):
             # High speed at low altitude
             anomaly['alt'] = np.random.uniform(5000, 10000)
             anomaly['gs'] = np.random.uniform(450, 550)
-            #anomaly['vertRate'] = np.random.uniform(-1000, 1000)  # Level or slight descent/climb
+            # anomaly['vertRate'] = np.random.uniform(-1000, 1000)  # Level or slight descent/climb
             anomalies.append(anomaly)
 
         elif anomaly_type == 'rapid_altitude_drop':
             anomaly['anomaly_type'] = anomaly_type
             # Rapid altitude drop (possible emergency)
             anomaly['vertRate'] = np.random.uniform(-8000, -5000)
-            #anomaly['gs_change'] = np.random.uniform(-50, 50)  # Possible speed changes during emergency
+            # anomaly['gs_change'] = np.random.uniform(-50, 50)  # Possible speed changes during emergency
             anomalies.append(anomaly)
 
         elif anomaly_type == 'impossible_turn':
@@ -292,7 +285,6 @@ def create_synthetic_anomalies(df, num_anomalies=1000):
                 anomaly['anomaly_type'] = anomaly_type
             anomalies.append(anomaly)
 
-
     anomaly_df = pd.DataFrame(anomalies)
 
     # Print statistics about the generated anomalies
@@ -302,6 +294,7 @@ def create_synthetic_anomalies(df, num_anomalies=1000):
     #     print(f"  - {anomaly_type}: {count} instances ({count/num_anomalies*100:.1f}%)")
 
     return anomaly_df
+
 
 class AnomalyDetector:
     def __init__(self, model, scaler, threshold_multiplier=2.5):
@@ -331,10 +324,14 @@ class AnomalyDetector:
             # print(f"95th percentile: {percentile_95:.6f}")
             # print(f"99th percentile: {percentile_99:.6f}")
 
-    def predict(self, data, return_scores=False,altitude_threshold=45000.0,speed_threshold=600.0):
+    def predict(self, data, return_scores=False, altitude_threshold=45000.0, speed_threshold=600.0):
         """Predict anomalies in new data"""
         self.model.eval()
         with torch.no_grad():
+            if isinstance(data, pd.DataFrame):
+                data_np = data.values
+            else:
+                data_np = np.array(data)
             data_tensor = torch.FloatTensor(data)
             predictions = self.model(data_tensor)
             reconstruction_errors = torch.mean((data_tensor - predictions) ** 2, dim=1)
@@ -343,44 +340,49 @@ class AnomalyDetector:
 
             altitude_col = 0  # Altitude column index
 
-            altitude_constraint = torch.from_numpy(
-                data[:, altitude_col] > (altitude_threshold - self.scaler.mean_[altitude_col]) / self.scaler.scale_[altitude_col]
+            altitude_constraint = torch.tensor(
+                data_np[:, altitude_col] > (altitude_threshold - self.scaler.mean_[altitude_col]) / self.scaler.scale_[
+                    altitude_col],
+                dtype=torch.bool
             )
             anomalies |= altitude_constraint
-            
-            # print("TESTING SCALER ALTITUDE")
-            # print(self.scaler.mean_[altitude_col])
-            # print(self.scaler.scale_[altitude_col])
 
             speed_col = 2  # Ground speed column index
 
             # Apply ground speed constraint if column is specified
-            speed_constraint = torch.from_numpy(
-                data[:, speed_col] > (speed_threshold - self.scaler.mean_[speed_col]) / self.scaler.scale_[speed_col]
+            speed_constraint = torch.tensor(
+                data_np[:, speed_col] > (speed_threshold - self.scaler.mean_[speed_col]) / self.scaler.scale_[
+                    speed_col],
+                dtype=torch.bool
             )
             anomalies |= speed_constraint
 
-            # print("TESTING SCALER SPEED")
-            # print(self.scaler.mean_[speed_col])
-            # print(self.scaler.scale_[speed_col])
-            
             anomalies_np = anomalies.numpy()
-            print(predictions)
-            #anomalies_df = pd.DataFrame(anomalies_np )
-            
-            features = ['alt', 'gs', 'heading', 'lat', 'lon', 'vertRate', 'altChange_encoded']
-            data_df = pd.DataFrame(data)
-            
-            data_df['anomaly'] = anomalies_np
-            #result = np.hstack((data, anomalies_np))
-            print(data_df['anomaly'])
-            
-            #data['anomaly'] = anomalies_np
+            #print(predictions)
+
+            # Create a DataFrame with the original data
+            if isinstance(data, pd.DataFrame):
+                data_df = data.copy()
+                data_df['anomaly'] = anomalies_np
+            else:
+                data_df = pd.DataFrame(data_np)
+                data_df['anomaly'] = anomalies_np
+
+            #print(data_df['anomaly'])
 
             if return_scores:
-                data['reconstruction_error'] = reconstruction_errors.numpy()
-                return data
-            return data_df
+                return anomalies_np, reconstruction_errors.numpy()
+            else:
+                # Create a DataFrame with the original data
+                if isinstance(data, pd.DataFrame):
+                    data_df = data.copy()
+                    data_df['anomaly'] = anomalies_np
+                else:
+                    data_df = pd.DataFrame(data_np)
+                    data_df['anomaly'] = anomalies_np
+
+                return data_df
+
 
     def evaluate(self, normal_data, anomaly_data):
         """Evaluate detector performance"""
@@ -392,12 +394,12 @@ class AnomalyDetector:
         detected_anomalies = np.sum(anomaly_predictions)
         detection_rate = (detected_anomalies / len(anomaly_data)) * 100
 
-        # print("\nAnomaly Detection Performance:")
-        # print(f"False Positives: {false_positives} out of {len(normal_data)} normal points ({false_positive_rate:.2f}%)")
-        # print(f"True Positives: {detected_anomalies} out of {len(anomaly_data)} anomalies ({detection_rate:.2f}%)")
-        # print("\nReconstruction Error Statistics:")
-        # print(f"Normal data - Mean: {np.mean(normal_scores):.6f}, Std: {np.std(normal_scores):.6f}")
-        # print(f"Anomaly data - Mean: {np.mean(anomaly_scores):.6f}, Std: {np.std(anomaly_scores):.6f}")
+        print("\nAnomaly Detection Performance:")
+        print(f"False Positives: {false_positives} out of {len(normal_data)} normal points ({false_positive_rate:.2f}%)")
+        print(f"True Positives: {detected_anomalies} out of {len(anomaly_data)} anomalies ({detection_rate:.2f}%)")
+        print("\nReconstruction Error Statistics:")
+        print(f"Normal data - Mean: {np.mean(normal_scores):.6f}, Std: {np.std(normal_scores):.6f}")
+        print(f"Anomaly data - Mean: {np.mean(anomaly_scores):.6f}, Std: {np.std(anomaly_scores):.6f}")
 
         # Analyze performance by anomaly type
         if 'anomaly_type' in anomaly_data:
@@ -564,6 +566,183 @@ def load_model(model_path='saved_models/flight_anomaly_model.pth',
     # print(f"\nModel loaded successfully: {model_type}")
     return model, scaler, detector
 
+
+def test_additional_data(model, scaler, detector, features, num_runs=1000):
+    """
+    Load and test data from multiple files, insert synthetic anomalies,
+    and calculate average true/false positive rates over multiple runs for each file
+    """
+    print(f"\n===== Testing Additional Data Files with Synthetic Anomalies ({num_runs} runs) =====")
+
+    # Define paths to the test files
+    test_file_paths = [
+        '/Users/dush/PycharmProjects/Raytheon/AeroAI/data/DFW_hose_data.json',
+        '/Users/dush/PycharmProjects/Raytheon/AeroAI/data/Israel_data.json',
+        '/Users/dush/PycharmProjects/Raytheon/AeroAI/data/FRA_hose_data.json'
+    ]
+
+    # Create a dictionary to store aggregated metrics for each file
+    aggregated_metrics = {}
+
+    for i, file_path in enumerate(test_file_paths):
+        try:
+            file_name = os.path.basename(file_path)
+            print(f"\nProcessing test file {i + 1}: {file_name}")
+
+            # Load and preprocess the test file
+            test_df = minimal_preprocess(file_path)
+            print(f"Loaded {len(test_df)} entries from test file {i + 1}")
+
+            # Ensure all required features exist
+            missing_features = [f for f in features if f not in test_df.columns]
+            if missing_features:
+                print(f"Warning: Missing features in test file {i + 1}: {missing_features}")
+                # Add missing features with default values
+                for feature in missing_features:
+                    if feature == 'altChange_encoded':
+                        test_df[feature] = 0
+                    elif feature == 'vertRate':
+                        test_df[feature] = 0
+                    elif feature in ['gs_change_rate', 'heading_change_rate']:
+                        test_df[feature] = 0
+
+            # Initialize metrics storage for this file
+            file_metrics = {
+                'true_positive_rate': [],
+                'false_positive_rate': [],
+                'precision': [],
+                'f1_score': [],
+                'accuracy': [],
+                'anomaly_type_detection': {}
+            }
+
+            # Run multiple times to get average performance
+            for run in range(num_runs):
+                print(f"\nRun {run + 1}/{num_runs} for file {i + 1}")
+
+                # Create a copy of the original data to use as "normal" data for evaluation
+                normal_df = test_df.copy()
+
+                # Generate synthetic anomalies based on this test file
+                num_anomalies = int(len(test_df) * 0.1)  # Create anomalies equal to 10% of test data
+                print(f"Generating {num_anomalies} synthetic anomalies...")
+                anomaly_df = create_synthetic_anomalies(test_df, num_anomalies=num_anomalies)
+
+                # Add a label column to track which rows are actual anomalies
+                normal_df['actual_anomaly'] = 0
+                anomaly_df['actual_anomaly'] = 1
+
+                # Combine normal and anomaly data
+                combined_df = pd.concat([normal_df, anomaly_df], ignore_index=True)
+
+                # Extract features for anomaly detection
+                combined_features = combined_df[features].values
+
+                # Scale the features
+                combined_features_scaled = scaler.transform(combined_features)
+
+                # Run anomaly detection
+                with torch.no_grad():
+                    data_tensor = torch.FloatTensor(combined_features_scaled)
+                    predictions = model(data_tensor)
+                    reconstruction_errors = torch.mean((data_tensor - predictions) ** 2, dim=1)
+                    predicted_anomalies = reconstruction_errors > detector.threshold
+                    predicted_anomalies_np = predicted_anomalies.numpy()
+
+                # Add predictions to the combined dataframe
+                combined_df['predicted_anomaly'] = predicted_anomalies_np
+
+                # Calculate performance metrics
+                tp = sum((combined_df['actual_anomaly'] == 1) & (combined_df['predicted_anomaly'] == 1))
+                fp = sum((combined_df['actual_anomaly'] == 0) & (combined_df['predicted_anomaly'] == 1))
+                tn = sum((combined_df['actual_anomaly'] == 0) & (combined_df['predicted_anomaly'] == 0))
+                fn = sum((combined_df['actual_anomaly'] == 1) & (combined_df['predicted_anomaly'] == 0))
+
+                # Calculate rates
+                true_positive_rate = tp / (tp + fn) * 100 if (tp + fn) > 0 else 0
+                false_positive_rate = fp / (fp + tn) * 100 if (fp + tn) > 0 else 0
+                precision = tp / (tp + fp) * 100 if (tp + fp) > 0 else 0
+                f1_score = 2 * (precision * true_positive_rate) / (precision + true_positive_rate) if (
+                                                                                                                  precision + true_positive_rate) > 0 else 0
+                accuracy = (tp + tn) / (tp + tn + fp + fn) * 100
+
+                # Store metrics for this run
+                file_metrics['true_positive_rate'].append(true_positive_rate)
+                file_metrics['false_positive_rate'].append(false_positive_rate)
+                file_metrics['precision'].append(precision)
+                file_metrics['f1_score'].append(f1_score)
+                file_metrics['accuracy'].append(accuracy)
+
+                # Analyze performance by anomaly type
+                if 'anomaly_type' in combined_df.columns:
+                    for anomaly_type, group in combined_df[combined_df['actual_anomaly'] == 1].groupby('anomaly_type'):
+                        group_tp = sum(group['predicted_anomaly'] == 1)
+                        detection_rate = (group_tp / len(group)) * 100
+
+                        if anomaly_type not in file_metrics['anomaly_type_detection']:
+                            file_metrics['anomaly_type_detection'][anomaly_type] = []
+
+                        file_metrics['anomaly_type_detection'][anomaly_type].append(detection_rate)
+
+                # Save the last run's results to CSV for reference
+                if run == num_runs - 1:
+                    result_file = f'/Users/dush/PycharmProjects/Raytheon/AeroAI/results/{file_name}_results_run{run + 1}.csv'
+                    os.makedirs(os.path.dirname(result_file), exist_ok=True)
+                    combined_df.to_csv(result_file, index=False)
+                    print(f"  - Final run results saved to: {result_file}")
+
+            # Calculate and display average metrics for this file
+            avg_tpr = np.mean(file_metrics['true_positive_rate'])
+            avg_fpr = np.mean(file_metrics['false_positive_rate'])
+            avg_precision = np.mean(file_metrics['precision'])
+            avg_f1 = np.mean(file_metrics['f1_score'])
+            avg_accuracy = np.mean(file_metrics['accuracy'])
+
+            std_tpr = np.std(file_metrics['true_positive_rate'])
+            std_fpr = np.std(file_metrics['false_positive_rate'])
+            std_precision = np.std(file_metrics['precision'])
+            std_f1 = np.std(file_metrics['f1_score'])
+            std_accuracy = np.std(file_metrics['accuracy'])
+
+            print(f"\nAverage Performance Metrics for {file_name} over {num_runs} runs:")
+            print(f"  - True Positive Rate (Recall): {avg_tpr:.2f}% ± {std_tpr:.2f}%")
+            print(f"  - False Positive Rate: {avg_fpr:.2f}% ± {std_fpr:.2f}%")
+            print(f"  - Precision: {avg_precision:.2f}% ± {std_precision:.2f}%")
+            print(f"  - F1 Score: {avg_f1:.2f}% ± {std_f1:.2f}%")
+            print(f"  - Accuracy: {avg_accuracy:.2f}% ± {std_accuracy:.2f}%")
+
+            # Display average performance by anomaly type for this file
+            if file_metrics['anomaly_type_detection']:
+                print("\nAverage Performance by Anomaly Type:")
+                for anomaly_type, rates in file_metrics['anomaly_type_detection'].items():
+                    avg_rate = np.mean(rates)
+                    std_rate = np.std(rates)
+                    print(f"  - {anomaly_type}: {avg_rate:.2f}% ± {std_rate:.2f}% detected")
+
+            # Store the aggregated metrics for this file
+            aggregated_metrics[file_name] = {
+                'true_positive_rate': (avg_tpr, std_tpr),
+                'false_positive_rate': (avg_fpr, std_fpr)
+            }
+
+            # Save the metrics for this file to a separate JSON file
+            metrics_file = f'/Users/dush/PycharmProjects/Raytheon/AeroAI/results/{file_name}_test_metrics.json'
+
+            # Convert numpy values to Python native types for JSON serialization
+            json_metrics = {
+                'true_positive_rate': (float(avg_tpr), float(std_tpr)),
+                'false_positive_rate': (float(avg_fpr), float(std_fpr))
+            }
+
+            with open(metrics_file, 'w') as f:
+                json.dump(json_metrics, f, indent=2)
+
+            print(f"  - Metrics for {file_name} saved to: {metrics_file}")
+
+        except Exception as e:
+            print(f"Error processing test file {i + 1}: {str(e)}")
+
+    return aggregated_metrics
 def analyze_anomaly_scores(anomaly_df, scores, detector_threshold):
     """Analyze detection performance for different types of anomalies"""
     anomaly_df['score'] = scores
@@ -576,10 +755,10 @@ def analyze_anomaly_scores(anomaly_df, scores, detector_threshold):
         max_score = group['score'].max()
         min_score = group['score'].min()
 
-        # print(f"\n{anomaly_type.upper()}:")
-        # print(f"  - Detection rate: {detection_rate:.2f}%")
-        # print(f"  - Average score: {avg_score:.6f}")
-        # print(f"  - Score range: {min_score:.6f} to {max_score:.6f}")
+        print(f"\n{anomaly_type.upper()}:")
+        print(f"  - Detection rate: {detection_rate:.2f}%")
+        print(f"  - Average score: {avg_score:.6f}")
+        print(f"  - Score range: {min_score:.6f} to {max_score:.6f}")
 
         # Find hardest to detect examples
         if not group['is_detected'].all() and len(group) > 1:
@@ -603,8 +782,8 @@ def main():
     try:
         # 1. Load and preprocess normal data
         print("Loading and preprocessing data...")
-        df = minimal_preprocess('data/data_MVP.json')
-        
+        df = minimal_preprocess('/Users/dush/PycharmProjects/Raytheon/AeroAI/data/FA-KSA_recording.json')
+
         # 2. Prepare features
         features = ['alt', 'gs', 'heading', 'vertRate', 'altChange_encoded']
         # Add new engineered features if they exist
@@ -618,17 +797,17 @@ def main():
         # 3. Scale the features
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
-
+        print("\n Values Scaled")
         # 4. Split into train/validation sets
         X_train, X_val = train_test_split(X_scaled, test_size=0.2, random_state=42)
 
         # 5. Create and train the enhanced model
-        # print("\nTraining enhanced model with larger architecture...")
+        print("\nTraining enhanced model with larger architecture...")
         model = EnhancedFlightPrediction(input_size=len(features))
         model, train_losses, val_losses = train_model(model, X_train, X_val, epochs=150, batch_size=128)
         #model, scaler, detector = load_model()
         # 6. Generate synthetic commercial flight anomalies
-        # print("\nGenerating synthetic commercial flight anomalies...")
+        print("\nGenerating synthetic commercial flight anomalies...")
         anomaly_df = create_synthetic_anomalies(df, num_anomalies=1000)  # Increased number of anomalies
 
         # Create a dataframe for analysis that includes the anomaly type
@@ -644,8 +823,8 @@ def main():
         # print(f"Combined data now has {len(combined_df)} rows (normal + synthetic).")
 
         # 6b. (Optional) Save combined data if you want to load it in Flask or other scripts
-        combined_json_path = "data/combined_MVP.json"
-        combined_df.to_json(combined_json_path, orient='records')
+        #combined_json_path = "data/combined_MVP.json"
+        #combined_df.to_json(combined_json_path, orient='records')
         # print(f"Saved combined normal + anomaly data to {combined_json_path}")
 
         # 7. Create and evaluate anomaly detector with adjusted threshold
@@ -655,9 +834,9 @@ def main():
 
         # Basic evaluation
         results = detector.evaluate(X_val, anomaly_features_scaled)
-
+        #print(results)
         # 8. Detailed analysis by anomaly type
-        # print("\nPerforming detailed analysis by anomaly type...")
+        print("\nPerforming detailed analysis by anomaly type...")
         with torch.no_grad():
             anomaly_tensor = torch.FloatTensor(anomaly_features_scaled)
             predictions = model(anomaly_tensor)
@@ -681,12 +860,12 @@ def main():
         # print("\nSaving enhanced model...")
         save_model(model, scaler, detector)
 
-        # Optionally load the model back to verify
+        test_additional_data(model, scaler, detector, features)
         #
 
         
         
-        # print("\nEnhanced model training and evaluation complete!")
+        print("\nEnhanced model training and evaluation complete!")
 
 
 
@@ -695,29 +874,9 @@ def main():
         # print(f"Error in main execution: {str(e)}")
         raise
     
-# def main2():
-#     test_df = pd.DataFrame(
-#         {
-#             "id": "QTR176-1681826580-schedule-0777",
-#             "pitr": 1682015957.0,
-#             "alt": 45200.0,
-#             "altChange": " ",
-#             "gs": 495.0,
-#             "heading": 142.0,
-#             "lat": 31.91217,
-#             "lon": 46.53798,
-#             "vertRate": 0.0,
-#             "anomaly": 0
-#         },
-# )
-    
-#     model, scaler, detector = load_model()
-#     features = ['alt', 'gs', 'heading', 'lat', 'lon', 'vertRate', 'altChange_encoded']
-#     scaled = scaler.transform(test_df[features].values)
-#     model.predict(scaled)
-#     print(test_df)
-    
+
 
 
 if __name__ == "__main__":
     main()
+

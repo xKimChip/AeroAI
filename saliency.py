@@ -11,7 +11,8 @@ class SaliencyAnalyzer:
     def compute_saliency(self, input_tensor):
         """Compute saliency with respect to the reconstruction error"""
         self.model.eval()
-        
+        input_tensor = input_tensor.clone().detach().to(self.device).requires_grad_(True) # removes captum warning UserWarning: Input Tensor 0 did not already require gradients, required_grads has been set automatically.
+
         # Define a forward function that returns scalar error
         def forward_func(inputs):
             reconstructions = self.model(inputs)

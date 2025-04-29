@@ -8,6 +8,11 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 import joblib
 import os
+from saliency import SaliencyAnalyzer
+from typing import Union, Dict, List
+import matplotlib.pyplot as plt
+
+
 
 class EnhancedFlightPrediction(nn.Module):
     def __init__(self, input_size, hidden_sizes=[256, 128, 64, 32, 64, 128, 256]):
@@ -19,8 +24,6 @@ class EnhancedFlightPrediction(nn.Module):
             hidden_sizes: List of hidden layer sizes for the encoder and decoder
         """
         super(EnhancedFlightPrediction, self).__init__()
-
-        # Ensure symmetric architecture for proper autoencoder
         self.input_size = input_size
 
         # Build encoder layers
@@ -32,7 +35,6 @@ class EnhancedFlightPrediction(nn.Module):
             encoder_layers.append(nn.LeakyReLU(0.2))
             encoder_layers.append(nn.Dropout(0.25))
             prev_size = h_size
-
         self.encoder = nn.Sequential(*encoder_layers)
 
         # Build decoder layers (reverse of encoder)
@@ -43,13 +45,9 @@ class EnhancedFlightPrediction(nn.Module):
             decoder_layers.append(nn.LeakyReLU(0.2))
             decoder_layers.append(nn.Dropout(0.25))
             prev_size = h_size
-
-        # Final layer to reconstruct input
         decoder_layers.append(nn.Linear(prev_size, input_size))
-
         self.decoder = nn.Sequential(*decoder_layers)
 
-        # Initialize weights for better gradient flow
         self._initialize_weights()
 
     def _initialize_weights(self):
@@ -69,7 +67,42 @@ class EnhancedFlightPrediction(nn.Module):
     def encode(self, x):
         """Get encoded representation"""
         return self.encoder(x)
+        
+    def add_saliency_analyzer(self, feature_names: List[str]):
+        """Initialize saliency analyzer with feature names"""
+        self.saliency_analyzer = SaliencyAnalyzer(self, feature_names)
+        self._feature_names = feature_names
 
+    def analyze_input(self, x: Union[np.ndarray, torch.Tensor]) -> Dict:
+        """Enhanced analysis with numerical saliency values"""
+        self.eval()
+        
+        if isinstance(x, np.ndarray):
+            x = torch.FloatTensor(x)
+        
+        with torch.no_grad():
+            reconstruction = self.forward(x)
+            error = torch.mean((x - reconstruction)**2, dim=1)
+            
+            results = {
+                'input': x.cpu().numpy(),
+                'reconstruction': reconstruction.cpu().numpy(),
+                'error': error.cpu().numpy()
+            }
+            
+        if hasattr(self, 'saliency_analyzer'):
+            try:
+                results['explanation'] = self.saliency_analyzer.explain(x)
+            except Exception as e:
+                print(f"Saliency computation failed: {str(e)}")
+                results['explanation'] = None
+                
+        return results
+        
+    def get_reconstruction_error(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute per-sample reconstruction error"""
+        with torch.no_grad():
+            return torch.mean((x - self.forward(x))**2, dim=1)
 
 def minimal_preprocess(filepath: str):
     """Minimal preprocessing - only handle format issues"""
@@ -120,6 +153,40 @@ def minimal_preprocess(filepath: str):
         df['heading_change_rate'] = df['heading_change_rate'].fillna(0)
 
     return df
+
+    def add_saliency_analyzer(self, feature_names: List[str]):
+        """Initialize saliency analyzer after model creation"""
+        self.saliency_analyzer = SaliencyAnalyzer(self, feature_names)
+    
+    def analyze_input(self, x: Union[np.ndarray, torch.Tensor]) -> Dict:
+        """Enhanced analysis with numerical saliency values"""
+        self.eval()
+        
+        if isinstance(x, np.ndarray):
+            x = torch.FloatTensor(x)
+        
+        with torch.no_grad():
+            results = {
+                'input': x.cpu().numpy(),
+                'reconstruction': self.forward(x).cpu().numpy(),
+                'error': torch.mean((x - self.forward(x))**2, dim=1).cpu().numpy()
+            }
+            
+        if hasattr(self, 'saliency_analyzer'):
+            try:
+                results['explanation'] = self.saliency_analyzer.explain(x)
+            except Exception as e:
+                print(f"Saliency computation failed: {str(e)}")
+                results['explanation'] = None
+                
+        return results
+
+    def get_reconstruction_error(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute per-sample reconstruction error"""
+        with torch.no_grad():
+            x_recon = self.forward(x)
+            return torch.mean((x - x_recon)**2, dim=1)
+
 
 def create_synthetic_anomalies(df, num_anomalies=1000):
     """Generate synthetic anomalies focusing on commercial flight patterns"""
@@ -421,6 +488,37 @@ class AnomalyDetector:
             'normal_scores': normal_scores,
             'anomaly_scores': anomaly_scores
         }
+        def explain_anomaly(self, 
+                      x: Union[np.ndarray, torch.Tensor],
+                      method: str = 'saliency') -> Dict:
+            """
+            Explain why a sample was flagged as anomalous
+            Args:
+                x: Input data (single sample only)
+                method: Saliency method to use
+            Returns:
+                Explanation dictionary with:
+                - top_features: Most contributing features
+                - saliency_map: Raw saliency values
+                - reconstruction_error: MSE error
+            """
+            if not hasattr(self.model, 'saliency_analyzer'):
+                raise RuntimeError("Initialize saliency analyzer first with add_saliency_analyzer()")
+            
+            if isinstance(x, np.ndarray):
+                x = torch.FloatTensor(x)
+            
+            if x.dim() == 1:
+                x = x.unsqueeze(0)  # Ensure batch dimension
+                
+            self.model.eval()
+            with torch.no_grad():
+                error = self.model.get_reconstruction_error(x)
+                
+            explanation = self.model.saliency_analyzer.explain(x, method=method)
+            explanation['reconstruction_error'] = error.item()
+            
+            return explanation
 
 def train_model(model, train_data, val_data, epochs=150, batch_size=128):
     """Train model with improved training loop and learning rate scheduling"""
@@ -576,9 +674,9 @@ def test_additional_data(model, scaler, detector, features, num_runs=1000):
 
     # Define paths to the test files
     test_file_paths = [
-        '/Users/dush/PycharmProjects/Raytheon/AeroAI/data/DFW_hose_data.json',
-        '/Users/dush/PycharmProjects/Raytheon/AeroAI/data/Israel_data.json',
-        '/Users/dush/PycharmProjects/Raytheon/AeroAI/data/FRA_hose_data.json'
+        'data/DFW_hose_data.json',
+        'data/Israel_data.json',
+        'data/FRA_hose_data.json'
     ]
 
     # Create a dictionary to store aggregated metrics for each file
@@ -782,11 +880,10 @@ def main():
     try:
         # 1. Load and preprocess normal data
         print("Loading and preprocessing data...")
-        df = minimal_preprocess('/Users/dush/PycharmProjects/Raytheon/AeroAI/data/FA-KSA_recording.json')
+        df = minimal_preprocess('data/FA-KSA_recording.json')
 
         # 2. Prepare features
         features = ['alt', 'gs', 'heading', 'vertRate', 'altChange_encoded']
-        # Add new engineered features if they exist
         if 'gs_change_rate' in df.columns:
             features.append('gs_change_rate')
         if 'heading_change_rate' in df.columns:
@@ -797,7 +894,8 @@ def main():
         # 3. Scale the features
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
-        print("\n Values Scaled")
+        print("\nValues Scaled")
+
         # 4. Split into train/validation sets
         X_train, X_val = train_test_split(X_scaled, test_size=0.2, random_state=42)
 
@@ -805,78 +903,49 @@ def main():
         print("\nTraining enhanced model with larger architecture...")
         model = EnhancedFlightPrediction(input_size=len(features))
         model, train_losses, val_losses = train_model(model, X_train, X_val, epochs=150, batch_size=128)
-        #model, scaler, detector = load_model()
-        # 6. Generate synthetic commercial flight anomalies
-        print("\nGenerating synthetic commercial flight anomalies...")
-        anomaly_df = create_synthetic_anomalies(df, num_anomalies=1000)  # Increased number of anomalies
 
-        # Create a dataframe for analysis that includes the anomaly type
-        anomaly_types = anomaly_df['anomaly_type'].copy()
-        # print(anomaly_types)
-        # Extract only the features for anomaly detection
+        # 6. Generate synthetic anomalies
+        print("\nGenerating synthetic commercial flight anomalies...")
+        anomaly_df = create_synthetic_anomalies(df, num_anomalies=1000)
         anomaly_features = anomaly_df[features].values
         anomaly_features_scaled = scaler.transform(anomaly_features)
 
-
-         # 6a. Combine original data with synthetic anomalies if you want a single dataset
-        combined_df = pd.concat([df, anomaly_df], ignore_index=True)
-        # print(f"Combined data now has {len(combined_df)} rows (normal + synthetic).")
-
-        # 6b. (Optional) Save combined data if you want to load it in Flask or other scripts
-        #combined_json_path = "data/combined_MVP.json"
-        #combined_df.to_json(combined_json_path, orient='records')
-        # print(f"Saved combined normal + anomaly data to {combined_json_path}")
-
-        # 7. Create and evaluate anomaly detector with adjusted threshold
-        # print("\nEvaluating commercial flight anomaly detection...")
-        detector = AnomalyDetector(model, scaler, threshold_multiplier=2.5)  # Adjusted threshold
+        # 7. Create and evaluate detector
+        detector = AnomalyDetector(model, scaler, threshold_multiplier=2.5)
         detector.fit_threshold(X_train)
 
-        # Basic evaluation
-        results = detector.evaluate(X_val, anomaly_features_scaled)
-        #print(results)
-        # 8. Detailed analysis by anomaly type
-        print("\nPerforming detailed analysis by anomaly type...")
+        # 8. Perform analysis
         with torch.no_grad():
             anomaly_tensor = torch.FloatTensor(anomaly_features_scaled)
             predictions = model(anomaly_tensor)
-            reconstruction_errors = torch.mean((anomaly_tensor - predictions) ** 2, dim=1).numpy()
+            reconstruction_errors = torch.mean((anomaly_tensor - predictions)**2, dim=1).numpy()
 
-        # Add the anomaly type back for analysis
-        anomaly_analysis_df = pd.DataFrame({
-            'anomaly_type': anomaly_types,
-            'score': reconstruction_errors,
-            'is_detected': reconstruction_errors > detector.threshold.item()
-        })
+        # 9. Initialize saliency analyzer
+        model.add_saliency_analyzer(features)
 
-        # Include original feature values for analysis
-        for col in features:
-            if col in anomaly_df.columns:
-                anomaly_analysis_df[col] = anomaly_df[col].values
+        # 10. Analyze sample anomaly
+        sample_anomaly = anomaly_df.iloc[0][features]
+        sample_numeric = np.array([float(x) if str(x).replace('.','',1).isdigit() else 0.0 
+                                 for x in sample_anomaly], dtype=np.float32).reshape(1, -1)
+        sample_scaled = scaler.transform(sample_numeric)
+        analysis = model.analyze_input(torch.FloatTensor(sample_scaled))
 
-        analyze_anomaly_scores(anomaly_analysis_df, reconstruction_errors, detector.threshold.item())
-
-        # 9. Save model and components
-        # print("\nSaving enhanced model...")
-        save_model(model, scaler, detector)
-
-        test_additional_data(model, scaler, detector, features)
-        #
-
+        print("\n=== Analysis Results ===")
+        print(f"Reconstruction Error: {analysis['error'][0]:.6f}")
         
-        
+        if analysis.get('explanation'):
+            print("\nTop Contributing Features:")
+            for feat, score in analysis['explanation']['top_features']:
+                print(f"{feat}: {score:.4f}")
+        else:
+            print("\nNo saliency explanation available")
+
         print("\nEnhanced model training and evaluation complete!")
 
-
-
-
     except Exception as e:
-        # print(f"Error in main execution: {str(e)}")
+        print(f"Error in main execution: {str(e)}")
         raise
-    
-
 
 
 if __name__ == "__main__":
     main()
-

@@ -11,6 +11,7 @@ import os
 from saliency import SaliencyAnalyzer
 from typing import Union, Dict, List
 import matplotlib.pyplot as plt
+import time #testing saliency
 
 
 
@@ -876,6 +877,68 @@ def flight_prediction(data, model, scaler, detector):
     anomalies = detector.predict(scaled)
     return anomalies
 
+
+def analyze_individual_anomalies(anomaly_df, model, scaler, detector, features):
+    """
+    Run saliency analysis on each individual anomaly
+    Args:
+        anomaly_df: DataFrame containing synthetic anomalies
+        model: Trained autoencoder model
+        scaler: Fitted scaler for data normalization
+        detector: Anomaly detector with set threshold
+        features: List of feature names
+    """
+    # Ensure model has saliency analyzer
+    if not hasattr(model, 'saliency_analyzer'):
+        model.add_saliency_analyzer(features)
+    
+    # Scale anomaly features
+    anomaly_features = anomaly_df[features].values
+    anomaly_features_scaled = scaler.transform(anomaly_features)
+    
+    # Detect anomalies
+    results = detector.predict(anomaly_features_scaled, return_scores=True)
+    is_anomaly = results[0]  # Boolean array of detected anomalies
+    scores = results[1]      # Reconstruction error scores
+    
+    print(f"Found {sum(is_anomaly)} anomalies out of {len(anomaly_df)} samples")
+    
+    # Process each detected anomaly
+    anomaly_explanations = []
+    for idx, (is_detected, score) in enumerate(zip(is_anomaly, scores)):
+        if is_detected:
+            # Get the anomaly features and scale them
+            anomaly = anomaly_df.iloc[idx]
+            anomaly_scaled = scaler.transform(anomaly[features].values.reshape(1, -1))
+            
+            # Run saliency analysis
+            analysis = model.analyze_input(torch.FloatTensor(anomaly_scaled))
+            
+            # Store explanation along with anomaly info
+            explanation = {
+                'index': idx,
+                'anomaly_type': anomaly.get('anomaly_type', 'Unknown'),
+                'reconstruction_error': score,
+                'features': {feat: anomaly[feat] for feat in features},
+                'saliency': analysis.get('explanation', {})
+            }
+            anomaly_explanations.append(explanation)
+            
+            # Print explanation for this anomaly
+            print(f"\n--- Anomaly #{idx} ({explanation['anomaly_type']}) ---")
+            print(f"Reconstruction Error: {score:.6f}")
+            
+            if analysis.get('explanation'):
+                print("Top Contributing Features:")
+                for feat, importance in analysis['explanation'].get('top_features', []):
+                    print(f"  {feat}: {importance:.4f}")
+            else:
+                print("No saliency explanation available")
+    
+    return anomaly_explanations
+
+
+
 def main():
     try:
         # 1. Load and preprocess normal data
@@ -907,38 +970,22 @@ def main():
         # 6. Generate synthetic anomalies
         print("\nGenerating synthetic commercial flight anomalies...")
         anomaly_df = create_synthetic_anomalies(df, num_anomalies=1000)
-        anomaly_features = anomaly_df[features].values
-        anomaly_features_scaled = scaler.transform(anomaly_features)
-
+        
         # 7. Create and evaluate detector
         detector = AnomalyDetector(model, scaler, threshold_multiplier=2.5)
         detector.fit_threshold(X_train)
 
-        # 8. Perform analysis
-        with torch.no_grad():
-            anomaly_tensor = torch.FloatTensor(anomaly_features_scaled)
-            predictions = model(anomaly_tensor)
-            reconstruction_errors = torch.mean((anomaly_tensor - predictions)**2, dim=1).numpy()
-
-        # 9. Initialize saliency analyzer
+        # 8. Initialize saliency analyzer
         model.add_saliency_analyzer(features)
-
-        # 10. Analyze sample anomaly
-        sample_anomaly = anomaly_df.iloc[0][features]
-        sample_numeric = np.array([float(x) if str(x).replace('.','',1).isdigit() else 0.0 
-                                 for x in sample_anomaly], dtype=np.float32).reshape(1, -1)
-        sample_scaled = scaler.transform(sample_numeric)
-        analysis = model.analyze_input(torch.FloatTensor(sample_scaled))
-
-        print("\n=== Analysis Results ===")
-        print(f"Reconstruction Error: {analysis['error'][0]:.6f}")
         
-        if analysis.get('explanation'):
-            print("\nTop Contributing Features:")
-            for feat, score in analysis['explanation']['top_features']:
-                print(f"{feat}: {score:.4f}")
-        else:
-            print("\nNo saliency explanation available")
+        # 9. Analyze all anomalies individually - ADD THE NEW FUNCTION HERE
+        print("\nAnalyzing individual anomalies...")
+        time.sleep(20) # used for testing
+        anomaly_explanations = analyze_individual_anomalies(anomaly_df, model, scaler, detector, features)
+        
+        # # Optional: Save results to file
+        # with open('anomaly_explanations.json', 'w') as f:
+        #     json.dump(anomaly_explanations, f, indent=2)
 
         print("\nEnhanced model training and evaluation complete!")
 

@@ -878,15 +878,116 @@ def flight_prediction(data, model, scaler, detector):
     return anomalies
 
 
+def evaluate_attribution_accuracy(anomaly_explanations, anomaly_df, features):
+    """
+    Evaluate if the saliency maps correctly identify the features that were modified
+    to create each anomaly type.
+    
+    Args:
+        anomaly_explanations: List of explanations from saliency analysis
+        anomaly_df: DataFrame containing the anomalies with their types
+        features: List of feature names
+        
+    Returns:
+        Dictionary of accuracy metrics by anomaly type
+    """
+    # Define which features were modified for each anomaly type
+    anomaly_feature_map = {
+        'high_speed': ['gs'],  # High speed anomalies modify ground speed
+        'low_speed_high_alt': ['gs', 'alt'],  # Low speed at high altitude modifies both
+        'sudden_speed_change': ['gs', 'gs_change_rate'],  # Sudden speed changes modify GS and its rate
+        'excessive_altitude': ['alt'],  # Excessive altitude modifies altitude
+        'low_altitude_high_speed': ['alt', 'gs'],  # Low altitude with high speed modifies both
+        'rapid_altitude_drop': ['vertRate'],  # Rapid altitude drop modifies vertical rate
+        'impossible_turn': ['heading', 'heading_change_rate'],  # Impossible turns modify heading and its rate
+        'erratic_heading': ['heading', 'heading_change_rate'],  # Erratic heading modifies heading and its rate
+        'unusual_loitering': ['gs', 'vertRate', 'heading_change_rate'],  # Loitering modifies GS, vertical rate, and heading
+        'altitude_speed_fluctuations': ['vertRate', 'gs', 'gs_change_rate']  # Fluctuations modify vertical rate and GS
+    }
+    
+    # Initialize counters for each anomaly type
+    attribution_metrics = {}
+    for anomaly_type in anomaly_feature_map.keys():
+        attribution_metrics[anomaly_type] = {
+            'total': 0,
+            'detected': 0,
+            'correctly_attributed': 0,
+            'attribution_accuracy': 0.0
+        }
+    
+    # Process each anomaly explanation
+    for explanation in anomaly_explanations:
+        anomaly_type = explanation['anomaly_type']
+        
+        # Skip unknown anomaly types
+        if anomaly_type not in anomaly_feature_map:
+            continue
+            
+        # Count this anomaly
+        attribution_metrics[anomaly_type]['total'] += 1
+        
+        # Count as detected
+        attribution_metrics[anomaly_type]['detected'] += 1
+        
+        # Check if saliency correctly identifies modified features
+        if 'saliency' in explanation and 'top_features' in explanation['saliency']:
+            # Extract top feature names (without importance values)
+            top_feature_names = [feat for feat, _ in explanation['saliency']['top_features'][:2]]
+            
+            # Get the expected modified features for this anomaly type
+            expected_features = anomaly_feature_map[anomaly_type]
+            
+            # Check if ANY of the expected features are in the top 2
+            attribution_correct = any(feat in top_feature_names for feat in expected_features)
+            
+            if attribution_correct:
+                attribution_metrics[anomaly_type]['correctly_attributed'] += 1
+    
+    # Calculate attribution accuracy for each anomaly type
+    for anomaly_type in attribution_metrics:
+        detected = attribution_metrics[anomaly_type]['detected']
+        if detected > 0:
+            correctly_attributed = attribution_metrics[anomaly_type]['correctly_attributed']
+            attribution_metrics[anomaly_type]['attribution_accuracy'] = (correctly_attributed / detected) * 100
+    
+    return attribution_metrics
+
+def print_attribution_report(attribution_metrics):
+    """
+    Print a detailed report of detection rates and attribution accuracy
+    
+    Args:
+        attribution_metrics: Dictionary of accuracy metrics by anomaly type
+    """
+    print("\n===== ANOMALY DETECTION AND ATTRIBUTION ACCURACY REPORT =====")
+    
+    for anomaly_type, metrics in attribution_metrics.items():
+        total = metrics['total']
+        detected = metrics['detected']
+        correctly_attributed = metrics['correctly_attributed']
+        
+        # Calculate rates
+        detection_rate = (detected / total) * 100 if total > 0 else 0
+        attribution_accuracy = metrics['attribution_accuracy']
+        
+        # Print the report for this anomaly type
+        print(f"\n{anomaly_type}:")
+        print(f"  Detection rate: {detection_rate:.2f}% ({detected}/{total})")
+        print(f"  Attribution accuracy: {attribution_accuracy:.2f}% ({correctly_attributed}/{detected})")
+
 def analyze_individual_anomalies(anomaly_df, model, scaler, detector, features):
     """
-    Run saliency analysis on each individual anomaly
+    Run saliency analysis on each individual anomaly and evaluate attribution accuracy
+    
     Args:
         anomaly_df: DataFrame containing synthetic anomalies
         model: Trained autoencoder model
         scaler: Fitted scaler for data normalization
         detector: Anomaly detector with set threshold
         features: List of feature names
+        
+    Returns:
+        Tuple of (anomaly_explanations, attribution_metrics)
     """
     # Ensure model has saliency analyzer
     if not hasattr(model, 'saliency_analyzer'):
@@ -923,21 +1024,14 @@ def analyze_individual_anomalies(anomaly_df, model, scaler, detector, features):
                 'saliency': analysis.get('explanation', {})
             }
             anomaly_explanations.append(explanation)
-            
-            # Print explanation for this anomaly
-            print(f"\n--- Anomaly #{idx} ({explanation['anomaly_type']}) ---")
-            print(f"Reconstruction Error: {score:.6f}")
-            
-            if analysis.get('explanation'):
-                print("Top Contributing Features:")
-                for feat, importance in analysis['explanation'].get('top_features', []):
-                    print(f"  {feat}: {importance:.4f}")
-            else:
-                print("No saliency explanation available")
     
-    return anomaly_explanations
-
-
+    # Evaluate attribution accuracy
+    attribution_metrics = evaluate_attribution_accuracy(anomaly_explanations, anomaly_df, features)
+    
+    # Print the attribution accuracy report
+    print_attribution_report(attribution_metrics)
+    
+    return anomaly_explanations, attribution_metrics
 
 def main():
     try:
@@ -978,16 +1072,23 @@ def main():
         # 8. Initialize saliency analyzer
         model.add_saliency_analyzer(features)
         
-        # 9. Analyze all anomalies individually - ADD THE NEW FUNCTION HERE
-        print("\nAnalyzing individual anomalies...")
-        time.sleep(20) # used for testing
-        anomaly_explanations = analyze_individual_anomalies(anomaly_df, model, scaler, detector, features)
+        # 9. Analyze all anomalies individually with attribution accuracy
+        print("\nAnalyzing individual anomalies with attribution accuracy...")
+        anomaly_explanations, attribution_metrics = analyze_individual_anomalies(
+            anomaly_df, model, scaler, detector, features
+        )
         
-        # # Optional: Save results to file
-        # with open('anomaly_explanations.json', 'w') as f:
-        #     json.dump(anomaly_explanations, f, indent=2)
-
+        # 10. Save results to file (optional)
+        results = {
+            'explanations': anomaly_explanations,
+            'attribution_metrics': attribution_metrics
+        }
+        
+        # with open('anomaly_analysis_results.json', 'w') as f:
+        #     json.dump(results, f, indent=2)
+            
         print("\nEnhanced model training and evaluation complete!")
+        print("Attribution accuracy results saved to 'anomaly_analysis_results.json'")
 
     except Exception as e:
         print(f"Error in main execution: {str(e)}")

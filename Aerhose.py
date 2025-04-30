@@ -170,11 +170,21 @@ def send_to_redis(data, eTime=EXPIRE_TIME):
       'heading': data['heading']
    }
    key = data['id']
+   
+   # setting time_diff
+   if r.exists(key) > 0:
+      temp = json.loads(r.lindex(key, 0))                   # get the first item in the list
+      data_vals['time_diff'] = int(data['pitr']) - int(temp['pitr'])  # compute the time difference
+   else:
+      data_vals['time_diff'] = 0                            # if the list does not exist, set the first time_diff to 0
+      
+   
    r.lpush(key, json.dumps(data_vals)) # push the columns of data to the list
    if r.ttl(key) == -1: # set expiration time to 120 seconds\
       r.expire(key, eTime)
    else:
-      r.expire(key, eTime, xx=True) 
+      r.expire(key, eTime, xx=True)
+    
    r.ltrim(key, 0, 10) # keep only the last 10 items
 
 class InflateStream:
@@ -247,6 +257,9 @@ def parse_json( str , output, latitude, longitude, range, append):
       elif r.ttl(decoded['id']) > REENTRY_TIME:
          print(f"Skipped item: {decoded['id']}")
          return -1
+      # elif r.object("IDLETIME",decoded['id']) > REENTRY_TIME:
+      #    print(f"Skipped item: {decoded['id']}")
+      #    return -1
       elif not decoded.get('alt') or not decoded.get('gs') :
          #print(f"Skipped item: {decoded['id']}")
          return -1

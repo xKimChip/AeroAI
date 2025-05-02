@@ -771,10 +771,11 @@ def analyze_anomaly_scores(anomaly_df, scores, detector_threshold):
 
 def flight_prediction(data, model, scaler, detector):
     """Predict anomalies in flight data using the trained model"""
-    features = ['alt', 'gs', 'heading', 'vertRate', 'altChange_encoded']
+    #features = ['alt', 'gs', 'heading', 'lat', 'lon', 'vertRate', 'altChange_encoded', 'gs_change_rate', 'heading_change_rate']
+    features = ['alt', 'gs', 'heading', 'vertRate', 'altChange_encoded', 'gs_change_rate', 'heading_change_rate']
     
-    
-    scaled = scaler.transform(data[features].values)
+    X = data[features].values
+    scaled = scaler.transform(X)
     anomalies = detector.predict(scaled)
     return anomalies
 

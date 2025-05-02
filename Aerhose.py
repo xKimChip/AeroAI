@@ -2,6 +2,7 @@
 
 import json, socket, ssl, sys, time, zlib, math, signal, time, redis
 import tkinter as tk
+from AeroPredictor import move_to_predict
 from datetime import datetime
 
 
@@ -18,8 +19,8 @@ filename = "data/hose_data.json"            # file to save the data
 TO_FILE = True                    # set to True to save the data to a file
 
 SIGINT_FLAG = False
-r = redis.Redis(host='localhost', port=6379, db=0)
-#r = redis.Redis(host='redis-14815.c289.us-west-1-2.ec2.redns.redis-cloud.com', port=14815, db=0)
+rMem = redis.Redis(host='localhost', port=6379, db=0)
+
 COLLECT = True
 EXPIRE_TIME = 300 # seconds
 REENTRY_TIME = 280 # seconds
@@ -48,8 +49,6 @@ def get_user_input():
    endless_var = tk.BooleanVar(root, value=False)
    append_var = tk.BooleanVar(root, value=False)
    duration_var = tk.IntVar(root, value=0)
-   # endless_var = tk.StringVar(root, value="False")
-   # append_var = tk.StringVar(root, value="False")
    
    
    values = {}
@@ -92,7 +91,7 @@ def get_user_input():
    # API Key field
    passkey_label = tk.Label(root, text="API Key", font=("Helvetica", 8))
    passkey_label.pack(padx=10, pady=0)
-   passkey = tk.Entry(root, width=1, textvariable=apikey_var)
+   passkey = tk.Entry(root, width=20, textvariable=apikey_var)
    passkey.pack(padx=10, pady=5)
 
    # Latitude field
@@ -159,33 +158,7 @@ def get_user_input():
    
    return values['username'], values['apikey'], values['latitude'], values['longitude'], values['range'], values['count'], values['endless'], values['append'],values['duration']
 
-def send_to_redis(data, eTime=EXPIRE_TIME):
-   # use a list to get the recent history of a data point.
-   data_vals = {
-      'pitr': data['pitr'],
-      'lat': data['lat'],
-      'lon': data['lon'],
-      #'alt': data['alt'],
-      'gs': data['gs'],
-      'heading': data['heading']
-   }
-   key = data['id']
-   
-   # setting time_diff
-   if r.exists(key) > 0:
-      temp = json.loads(r.lindex(key, 0))                   # get the first item in the list
-      data_vals['time_diff'] = int(data['pitr']) - int(temp['pitr'])  # compute the time difference
-   else:
-      data_vals['time_diff'] = 0                            # if the list does not exist, set the first time_diff to 0
-      
-   
-   r.lpush(key, json.dumps(data_vals)) # push the columns of data to the list
-   if r.ttl(key) == -1: # set expiration time to 120 seconds\
-      r.expire(key, eTime)
-   else:
-      r.expire(key, eTime, xx=True)
-    
-   r.ltrim(key, 0, 10) # keep only the last 10 items
+
 
 class InflateStream:
    "A wrapper for a socket carrying compressed data that does streaming decompression"
@@ -254,18 +227,16 @@ def parse_json( str , output, latitude, longitude, range, append):
       elif haversine(float(decoded["lat"]), float(decoded['lon']), latitude, longitude) > range:
          #print(f"Skipped position: {decoded['lat']}, {decoded['lon']}")
          return -1
-      elif r.ttl(decoded['id']) > REENTRY_TIME:
+      elif rMem.ttl(decoded['id']) > REENTRY_TIME:
          print(f"Skipped item: {decoded['id']}")
          return -1
-      # elif r.object("IDLETIME",decoded['id']) > REENTRY_TIME:
-      #    print(f"Skipped item: {decoded['id']}")
-      #    return -1
       elif not decoded.get('alt') or not decoded.get('gs') :
          #print(f"Skipped item: {decoded['id']}")
          return -1
          
       # Send data to redis first 
-      send_to_redis(decoded)
+      move_to_predict(decoded)
+      
       if append and output is not None:
          json_str = json.dumps(decoded, indent="\t\t")
          output.write('\t' + json_str.replace('}', '\t}'))

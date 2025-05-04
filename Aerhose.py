@@ -2,16 +2,16 @@
 
 import json, socket, ssl, sys, time, zlib, math, signal, time, redis
 import tkinter as tk
-from AeroPredictor import move_to_predict
+from AeroPredictor import move_to_predict, check_reetry
 from datetime import datetime
 
 
 
-username = ""
-apikey = ""
-latitude = ""
-longitude = ""
-range = ""
+username = "RTXDC"
+apikey = "***REMOVED***"
+latitude = 37.7749
+longitude = 46.53798
+range = 300
 
 compression = None        # set to "deflate", "decompress", or "gzip" to enable compression
 servername = "firehose.flightaware.com"
@@ -19,11 +19,8 @@ filename = "data/hose_data.json"            # file to save the data
 TO_FILE = True                    # set to True to save the data to a file
 
 SIGINT_FLAG = False
-rMem = redis.Redis(host='localhost', port=6379, db=0)
+#rMem = redis.Redis(host='localhost', port=6379, db=0)
 
-COLLECT = True
-EXPIRE_TIME = 300 # seconds
-REENTRY_TIME = 280 # seconds
 
 
 def sigkill_handler(signum, frame):
@@ -40,11 +37,11 @@ def get_user_input():
    root.geometry("300x500")
    root.title("AeroHose")
    
-   username_var = tk.StringVar(root, value="RTXDC")
-   apikey_var = tk.StringVar(root, value="***REMOVED***")
-   latitude_var = tk.DoubleVar(root, value=37.7749)
-   longitude_var = tk.DoubleVar(root, value=46.53798)
-   range_var = tk.IntVar(root, value=300)
+   username_var = tk.StringVar(root, value=username)
+   apikey_var = tk.StringVar(root, value=apikey)
+   latitude_var = tk.DoubleVar(root, value=latitude)
+   longitude_var = tk.DoubleVar(root, value=longitude)
+   range_var = tk.IntVar(root, value=range)
    count_var = tk.IntVar(root, value=0)
    endless_var = tk.BooleanVar(root, value=False)
    append_var = tk.BooleanVar(root, value=False)
@@ -227,7 +224,7 @@ def parse_json( str , output, latitude, longitude, range, append):
       elif haversine(float(decoded["lat"]), float(decoded['lon']), latitude, longitude) > range:
          #print(f"Skipped position: {decoded['lat']}, {decoded['lon']}")
          return -1
-      elif rMem.ttl(decoded['id']) > REENTRY_TIME:
+      elif check_reetry(decoded['id']):
          print(f"Skipped item: {decoded['id']}")
          return -1
       elif not decoded.get('alt') or not decoded.get('gs') :

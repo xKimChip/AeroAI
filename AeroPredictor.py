@@ -22,6 +22,11 @@ rDisk = redis.Redis(
 
 EXPIRE_TIME = 300 # 5 minutes
 EXPIRE_TIME_LONG = 86400 # 24 hours
+REENTRY_TIME = 280 
+def check_reetry(key):
+   if rMem.ttl(key) >= REENTRY_TIME:
+      return True
+   return False
 
 def process_for_redis(data, eTime=EXPIRE_TIME):
    # use a list to get the recent history of a data point.
@@ -46,7 +51,8 @@ def process_for_redis(data, eTime=EXPIRE_TIME):
       data_vals['time_diff'] = int(data['pitr']) - int(temp['pitr']) if int(data['pitr']) - int(temp['pitr']) > 0 else 1 # compute the time difference
       data_vals['gs_change_rate'] = (float(data['gs']) - float(temp['gs'])) / data_vals['time_diff']                     # comute the ground speed change rate
       heading_diff = ((float(data['heading']) - float(temp['heading'])) + 180) % 360 - 180
-      data_vals['heading_change_rate'] = heading_diff / data_vals['time_diff']                                           # compute the heading change rate                          
+      data_vals['heading_change_rate'] = heading_diff / data_vals['time_diff']                                           # compute the heading change rate
+      data_vals['anomaly_score'] = max(0, temp['anomaly_score'] - data_vals['time_diff'] // 150)                   # Degrade anomaly score by 0.2 every 30 seconds                    
    else:
       data_vals['time_diff'] = 1                            # if the list does not exist, set the first time_diff to 1
       data_vals['gs_change_rate'] = 0                       # if the list does not exist, set the first gs_change_rate to 0   
@@ -72,24 +78,17 @@ def move_to_predict(data):
 
    results_df = flight_prediction(df, model, scaler, detector)
    
-   data_vals['anomaly_score'] = (results_df['anomaly']).to_dict()
+   data_vals['anomaly_score'] = float(results_df['anomaly'].values[0]) # get the anomaly score from the results
    
    rDisk.lpush(key, json.dumps(data_vals)) # push the columns of data to the list
    if rDisk.ttl(key) == -1: # set the expirate time to ETIME
       rDisk.expire(key, EXPIRE_TIME_LONG)
    else:
-      rMem.expire(key, EXPIRE_TIME_LONG, xx=True)
-    
+      rDisk.expire(key, EXPIRE_TIME_LONG, xx=True)
+   #rDisk.publish('lpush_channel', key) # publish the key to the channel
     
 if __name__ == "__main__":
-    filename = "data/data_MVP.json"            # file to be read
-    #min_preprocess(filename)
-    #print(type(r.lindex("THY6526-1745891097-ed-1227p", 0)))
-    bytes_data = rMem.lindex("THY6526-1745891097-ed-1227p", 0)
-    temp = json.loads(bytes_data)
-    temp['time_diff'] = 15
-    #print (temp)
-    print(rMem.lset("THY6526-1745891097-ed-1227p", 0, json.dumps(temp)))
+   rDisk.publish('test_channel2', 'Hello, Redis!') # test the redis connection
     
 
 

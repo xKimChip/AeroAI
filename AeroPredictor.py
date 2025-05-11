@@ -8,21 +8,26 @@ model, scaler, detector = load_model()
 rMem = redis.Redis(host='localhost', port=6379, db=0)
 
 # Holds long-term history of all flights over the RunTime
-REDIS_HOST = 'redis-14815.c289.us-west-1-2.ec2.redns.redis-cloud.com'
-REDIS_PORT = 14815
-REDIS_USER = 'default'
-REDIS_PASSWORD = 'J9rkVUXSCnwbadDNPaicB2YnFe4EZjxo'
+# REDIS_HOST = 'redis-14815.c289.us-west-1-2.ec2.redns.redis-cloud.com'
+# REDIS_PORT = 14815
+# REDIS_USER = 'default'
+# REDIS_PASSWORD = 'J9rkVUXSCnwbadDNPaicB2YnFe4EZjxo'
 
-rDisk = redis.Redis(
-   host=REDIS_HOST, port=REDIS_PORT,
-   username=REDIS_USER,
-   password=REDIS_PASSWORD,
-   socket_connect_timeout=5
-   )
+# rDisk = redis.Redis(
+#    host=REDIS_HOST, port=REDIS_PORT,
+#    username=REDIS_USER,
+#    password=REDIS_PASSWORD,
+#    socket_connect_timeout=5
+#    )
 
 EXPIRE_TIME = 300 # 5 minutes
-EXPIRE_TIME_LONG = 86400 # 24 hours
-REENTRY_TIME = 280 
+EXPIRE_TIME_LONG = 18000 # 5 hours
+REENTRY_TIME = 17980  # 4 hours 59 minutes 40 seconds
+
+
+
+
+
 def check_reetry(key):
    if rMem.ttl(key) >= REENTRY_TIME:
       return True
@@ -45,6 +50,8 @@ def process_for_redis(data, eTime=EXPIRE_TIME):
    }
    key = data['id']
    
+   
+   
    # Processing the data
    if rMem.exists(key) > 0:
       temp = json.loads(rMem.lindex(key, 0))                   # get the first item in the list
@@ -58,14 +65,14 @@ def process_for_redis(data, eTime=EXPIRE_TIME):
       data_vals['gs_change_rate'] = 0                       # if the list does not exist, set the first gs_change_rate to 0   
       data_vals['heading_change_rate'] = 0                  # if the list does not exist, set the first heading_change_rate to 0
       
-   
-   rMem.lpush(key, json.dumps(data_vals)) # push the columns of data to the list
-   if rMem.ttl(key) == -1: # set the expirate time to ETIME
-      rMem.expire(key, eTime)
-   else:
-      rMem.expire(key, eTime, xx=True)
+   # Predict in offline use as well
+   # rMem.lpush(key, json.dumps(data_vals)) # push the columns of data to the list
+   # if rMem.ttl(key) == -1: # set the expirate time to ETIME
+   #    rMem.expire(key, eTime)
+   # else:
+   #    rMem.expire(key, eTime, xx=True)
     
-   rMem.ltrim(key, 0, 10) # keep only the last 10 items
+   # rMem.ltrim(key, 0, 10) # keep only the last 10 items
    
    return key, data_vals
 
@@ -80,12 +87,21 @@ def move_to_predict(data):
    
    data_vals['anomaly_score'] = float(results_df['anomaly'].values[0]) # get the anomaly score from the results
    
-   rDisk.lpush(key, json.dumps(data_vals)) # push the columns of data to the list
-   if rDisk.ttl(key) == -1: # set the expirate time to ETIME
-      rDisk.expire(key, EXPIRE_TIME_LONG)
+   rMem.lpush(key, json.dumps(data_vals)) # push the columns of data to the list
+   if rMem.ttl(key) == -1: # set the expirate time to ETIME
+      rMem.expire(key, EXPIRE_TIME_LONG)
    else:
-      rDisk.expire(key, EXPIRE_TIME_LONG, xx=True)
-   #rDisk.publish('lpush_channel', key) # publish the key to the channel
+      rMem.expire(key, EXPIRE_TIME_LONG, xx=True)
+   rMem.publish('lpush_channel', key) # publish the key to the channel
+   
+   
+   # For Cloud usage
+   # rDisk.lpush(key, json.dumps(data_vals)) # push the columns of data to the list
+   # if rDisk.ttl(key) == -1: # set the expirate time to ETIME
+   #    rDisk.expire(key, EXPIRE_TIME_LONG)
+   # else:
+   #    rDisk.expire(key, EXPIRE_TIME_LONG, xx=True)
+   # #rDisk.publish('lpush_channel', key) # publish the key to the channel
     
 if __name__ == "__main__":
    rDisk.publish('test_channel2', 'Hello, Redis!') # test the redis connection

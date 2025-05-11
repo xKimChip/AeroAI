@@ -13,10 +13,11 @@ latitude = 37.7749
 longitude = 46.53798
 range = 300
 
-compression = None        # set to "deflate", "decompress", or "gzip" to enable compression
+compression = None                           # set to "deflate", "decompress", or "gzip" to enable compression
 servername = "firehose.flightaware.com"
-filename = "data/hose_data.json"            # file to save the data
-TO_FILE = True                    # set to True to save the data to a file
+filename = "data/hose_data.json"             # file to save the data
+TO_FILE = True                               # set to True to save the data to a file
+LIVE = True                                  # set to True for live demo
 
 SIGINT_FLAG = False
 #rMem = redis.Redis(host='localhost', port=6379, db=0)
@@ -213,7 +214,7 @@ def haversine(lat1, lon1, lat2, lon2):
 
 # function to parse JSON data:
 def parse_json( str , output, latitude, longitude, range, append):
-   #try:
+   try:
       # parse all data into dictionary decoded:
       decoded = json.loads(str)
 
@@ -237,7 +238,7 @@ def parse_json( str , output, latitude, longitude, range, append):
       if append and output is not None:
          json_str = json.dumps(decoded, indent="\t\t")
          output.write('\t' + json_str.replace('}', '\t}'))
-      elif not append:
+      elif not append and not LIVE:
          with open(filename, 'w') as output:
             json.dump([decoded], output, indent="\t")
 
@@ -247,11 +248,11 @@ def parse_json( str , output, latitude, longitude, range, append):
       diff = clocknow - int(decoded['pitr'])
       #print("diff = {0:.2f} s\n".format(diff))
       return 0
-   # except (ValueError, KeyError, TypeError):
-   #     print("JSON format error: ", sys.exc_info()[0])
-   #     #print(str)
-   #     #print(traceback.format_exc())
-   #     return -1
+   except (ValueError, KeyError, TypeError):
+       print("JSON format error: ", sys.exc_info()[0])
+       #print(str)
+       #print(traceback.format_exc())
+       return -1
 
 def initiate_hose():
    # get popup for user input

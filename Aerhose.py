@@ -2,27 +2,26 @@
 
 import json, socket, ssl, sys, time, zlib, math, signal, time, redis
 import tkinter as tk
+from AeroPredictor import move_to_predict, check_reetry
 from datetime import datetime
 
 
 
-username = ""
-apikey = ""
-latitude = ""
-longitude = ""
-range = ""
+username = "RTXDC"
+apikey = "***REMOVED***"
+latitude = 37.7749
+longitude = 46.53798
+range = 300
 
-compression = None        # set to "deflate", "decompress", or "gzip" to enable compression
+compression = None                           # set to "deflate", "decompress", or "gzip" to enable compression
 servername = "firehose.flightaware.com"
-filename = "data/hose_data.json"            # file to save the data
-TO_FILE = True                    # set to True to save the data to a file
+filename = "data/hose_data.json"             # file to save the data
+TO_FILE = True                               # set to True to save the data to a file
+LIVE = True                                  # set to True for live demo
 
 SIGINT_FLAG = False
-r = redis.Redis(host='localhost', port=6379, db=0)
-#r = redis.Redis(host='redis-14815.c289.us-west-1-2.ec2.redns.redis-cloud.com', port=14815, db=0)
-COLLECT = True
-EXPIRE_TIME = 120 # seconds
-REENTRY_TIME = 105 # seconds
+#rMem = redis.Redis(host='localhost', port=6379, db=0)
+
 
 
 def sigkill_handler(signum, frame):
@@ -39,17 +38,15 @@ def get_user_input():
    root.geometry("300x500")
    root.title("AeroHose")
    
-   username_var = tk.StringVar(root, value="RTXDC")
-   apikey_var = tk.StringVar(root, value="***REMOVED***")
-   latitude_var = tk.DoubleVar(root, value=37.7749)
-   longitude_var = tk.DoubleVar(root, value=46.53798)
-   range_var = tk.IntVar(root, value=300)
+   username_var = tk.StringVar(root, value=username)
+   apikey_var = tk.StringVar(root, value=apikey)
+   latitude_var = tk.DoubleVar(root, value=latitude)
+   longitude_var = tk.DoubleVar(root, value=longitude)
+   range_var = tk.IntVar(root, value=range)
    count_var = tk.IntVar(root, value=0)
    endless_var = tk.BooleanVar(root, value=False)
    append_var = tk.BooleanVar(root, value=False)
    duration_var = tk.IntVar(root, value=0)
-   # endless_var = tk.StringVar(root, value="False")
-   # append_var = tk.StringVar(root, value="False")
    
    
    values = {}
@@ -92,7 +89,7 @@ def get_user_input():
    # API Key field
    passkey_label = tk.Label(root, text="API Key", font=("Helvetica", 8))
    passkey_label.pack(padx=10, pady=0)
-   passkey = tk.Entry(root, width=1, textvariable=apikey_var)
+   passkey = tk.Entry(root, width=20, textvariable=apikey_var)
    passkey.pack(padx=10, pady=5)
 
    # Latitude field
@@ -159,22 +156,7 @@ def get_user_input():
    
    return values['username'], values['apikey'], values['latitude'], values['longitude'], values['range'], values['count'], values['endless'], values['append'],values['duration']
 
-def send_to_redis(data, eTime=EXPIRE_TIME):
-   # use a list to get the recent history of a data point.
-   data_vals = {
-      'pitr': data['pitr'],
-      'lat': data['lat'],
-      'lon': data['lon'],
-      #'alt': data['alt'],
-      'gs': data['gs'],
-      'heading': data['heading']
-   }
-   key = data['id']
-   pipe = r.pipeline()
-   pipe.lpush(key, json.dumps(data_vals)) # push the columns of data to the list
-   #pipe.expire(key, 120) # set expiration time to 120 seconds
-   pipe.ltrim(key, 0, 10) # keep only the last 10 items
-   pipe.execute()
+
 
 class InflateStream:
    "A wrapper for a socket carrying compressed data that does streaming decompression"
@@ -232,7 +214,7 @@ def haversine(lat1, lon1, lat2, lon2):
 
 # function to parse JSON data:
 def parse_json( str , output, latitude, longitude, range, append):
-   #try:
+   try:
       # parse all data into dictionary decoded:
       decoded = json.loads(str)
 
@@ -243,7 +225,7 @@ def parse_json( str , output, latitude, longitude, range, append):
       elif haversine(float(decoded["lat"]), float(decoded['lon']), latitude, longitude) > range:
          #print(f"Skipped position: {decoded['lat']}, {decoded['lon']}")
          return -1
-      elif r.ttl(decoded['id']) > REENTRY_TIME:
+      elif check_reetry(decoded['id']):
          print(f"Skipped item: {decoded['id']}")
          return -1
       elif not decoded.get('alt') or not decoded.get('gs') :
@@ -251,11 +233,12 @@ def parse_json( str , output, latitude, longitude, range, append):
          return -1
          
       # Send data to redis first 
-      send_to_redis(decoded)
+      move_to_predict(decoded)
+      
       if append and output is not None:
          json_str = json.dumps(decoded, indent="\t\t")
          output.write('\t' + json_str.replace('}', '\t}'))
-      elif not append:
+      elif not append and not LIVE:
          with open(filename, 'w') as output:
             json.dump([decoded], output, indent="\t")
 
@@ -265,11 +248,11 @@ def parse_json( str , output, latitude, longitude, range, append):
       diff = clocknow - int(decoded['pitr'])
       #print("diff = {0:.2f} s\n".format(diff))
       return 0
-   # except (ValueError, KeyError, TypeError):
-   #     print("JSON format error: ", sys.exc_info()[0])
-   #     #print(str)
-   #     #print(traceback.format_exc())
-   #     return -1
+   except (ValueError, KeyError, TypeError):
+       print("JSON format error: ", sys.exc_info()[0])
+       #print(str)
+       #print(traceback.format_exc())
+       return -1
 
 def initiate_hose():
    # get popup for user input

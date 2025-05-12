@@ -1,7 +1,7 @@
 # AeroAI
 | Team Member         | GitHub Username |
 |---------------------|----------------|
-| Bobak Sandri       | [bobaksadri](https://github.com/bobaksadri) |
+| Bobak Sadri       | [bobaksadri](https://github.com/bobaksadri) |
 | Royce Chipman      | [xKimchip](https://github.com/xKimchip) |
 | Parsa Hesam        | [phesamuci](https://github.com/phesamuci) |
 | Benjoseph Villamor | [bnvillamor](https://github.com/bnvillamor) |

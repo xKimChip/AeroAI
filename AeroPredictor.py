@@ -12,17 +12,17 @@ model.add_saliency_analyzer(features)
 rMem = redis.Redis(host='localhost', port=6379, db=0)
 
 # Holds long-term history of all flights over the RunTime
-# REDIS_HOST = 'redis-14815.c289.us-west-1-2.ec2.redns.redis-cloud.com'
-# REDIS_PORT = 14815
-# REDIS_USER = 'default'
-# REDIS_PASSWORD = 'J9rkVUXSCnwbadDNPaicB2YnFe4EZjxo'
+REDIS_HOST = 'redis-14815.c289.us-west-1-2.ec2.redns.redis-cloud.com'
+REDIS_PORT = 14815
+REDIS_USER = 'default'
+REDIS_PASSWORD = 'J9rkVUXSCnwbadDNPaicB2YnFe4EZjxo'
 
-# rDisk = redis.Redis(
-#    host=REDIS_HOST, port=REDIS_PORT,
-#    username=REDIS_USER,
-#    password=REDIS_PASSWORD,
-#    socket_connect_timeout=5
-#    )
+rDisk = redis.Redis(
+   host=REDIS_HOST, port=REDIS_PORT,
+   username=REDIS_USER,
+   password=REDIS_PASSWORD,
+   socket_connect_timeout=5
+   )
 
 EXPIRE_TIME = 300 # 5 minutes
 EXPIRE_TIME_LONG = 18000 # 5 hours
@@ -43,6 +43,7 @@ def process_for_redis(data, eTime=EXPIRE_TIME):
       data['altChange'] = ' '
    
    data_vals = {
+      'ident': data['ident'],
       'pitr': data['pitr'],
       'lat': data['lat'],
       'lon': data['lon'],
@@ -63,7 +64,8 @@ def process_for_redis(data, eTime=EXPIRE_TIME):
       data_vals['gs_change_rate'] = (float(data['gs']) - float(temp['gs'])) / data_vals['time_diff']                     # comute the ground speed change rate
       heading_diff = ((float(data['heading']) - float(temp['heading'])) + 180) % 360 - 180
       data_vals['heading_change_rate'] = heading_diff / data_vals['time_diff']                                           # compute the heading change rate
-      data_vals['anomaly_score'] = max(0, temp['anomaly_score'] - data_vals['time_diff'] // 150)                   # Degrade anomaly score by 0.2 every 30 seconds                    
+
+      #data_vals['anomaly_score'] = max(0, temp['anomaly_score'] - data_vals['time_diff'] // 150)                   # Degrade anomaly score by 0.2 every 30 seconds                    
    else:
       data_vals['time_diff'] = 1                            # if the list does not exist, set the first time_diff to 1
       data_vals['gs_change_rate'] = 0                       # if the list does not exist, set the first gs_change_rate to 0   
@@ -87,9 +89,13 @@ def move_to_predict(data):
    df = pd.DataFrame(data_vals, index=[0])
 
 
-   results_df = flight_prediction(df, model, scaler, detector)
-   
+   results_df = flight_prediction(df, model, scaler, detector, explain=True)
+   #data_vals['anomaly'] = results_df.to_json() # Uncomment to see the whole dataframe
+
    data_vals['anomaly_score'] = float(results_df['anomaly'].values[0]) # get the anomaly score from the results
+   data_vals['saliency'] = results_df['saliency'].values[0] # get the saliency from the results
+   # if data_vals['anomaly_score'] > 0:   # uncomment to see anomalies easier
+   #    print(key)
    
    rMem.lpush(key, json.dumps(data_vals)) # push the columns of data to the list
    if rMem.ttl(key) == -1: # set the expirate time to ETIME
@@ -100,15 +106,15 @@ def move_to_predict(data):
    
    
    # For Cloud usage
-   # rDisk.lpush(key, json.dumps(data_vals)) # push the columns of data to the list
-   # if rDisk.ttl(key) == -1: # set the expirate time to ETIME
-   #    rDisk.expire(key, EXPIRE_TIME_LONG)
-   # else:
-   #    rDisk.expire(key, EXPIRE_TIME_LONG, xx=True)
-   # #rDisk.publish('lpush_channel', key) # publish the key to the channel
+#    rDisk.lpush(key, json.dumps(data_vals)) # push the columns of data to the list
+#    if rDisk.ttl(key) == -1: # set the expirate time to ETIME
+#       rDisk.expire(key, EXPIRE_TIME_LONG)
+#    else:
+#       rDisk.expire(key, EXPIRE_TIME_LONG, xx=True)
+#    rDisk.publish('lpush_channel', key) # publish the key to the channel
     
-if __name__ == "__main__":
-   rDisk.publish('test_channel2', 'Hello, Redis!') # test the redis connection
+# if __name__ == "__main__":
+#    rDisk.publish('test_channel2', 'Hello, Redis!') # test the redis connection
     
 
 

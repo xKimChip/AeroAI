@@ -868,15 +868,27 @@ def analyze_anomaly_scores(anomaly_df, scores, detector_threshold):
             #         if feature in missed.columns:
             #             print(f"    {feature}: {missed.iloc[0][feature]}")
 
-def flight_prediction(data, model, scaler, detector):
-    """Predict anomalies in flight data using the trained model"""
-    #features = ['alt', 'gs', 'heading', 'lat', 'lon', 'vertRate', 'altChange_encoded', 'gs_change_rate', 'heading_change_rate']
-    features = ['alt', 'gs', 'heading', 'vertRate', 'altChange_encoded', 'gs_change_rate', 'heading_change_rate']
+# def flight_prediction(data, model, scaler, detector):
+#     """Predict anomalies in flight data using the trained model"""
+#     #features = ['alt', 'gs', 'heading', 'lat', 'lon', 'vertRate', 'altChange_encoded', 'gs_change_rate', 'heading_change_rate']
+#     features = ['alt', 'gs', 'heading', 'vertRate', 'altChange_encoded', 'gs_change_rate', 'heading_change_rate']
     
-    X = data[features].values
-    scaled = scaler.transform(X)
-    anomalies = detector.predict(scaled)
-    return anomalies
+#     X = data[features].values
+#     scaled = scaler.transform(X)
+#     anomalies = detector.predict(scaled)
+#     return anomalies
+
+def flight_prediction(data, model, scaler, detector, explain=False):
+    features = ['alt', 'gs', 'heading', 'vertRate', 'altChange_encoded', 'gs_change_rate', 'heading_change_rate']
+    scaled = scaler.transform(data[features].values)
+    
+    anomalies_df = detector.predict(scaled)
+
+    if explain:
+        analysis = model.analyze_input(torch.FloatTensor(scaled))
+        anomalies_df['saliency'] = analysis.get('explanation', None)
+
+    return anomalies_df
 
 
 def evaluate_attribution_accuracy(anomaly_explanations, anomaly_df, features):

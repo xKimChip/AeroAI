@@ -1,8 +1,12 @@
 import pandas as pd
-from AeroEncoder import load_model, flight_prediction
+from AeroEncoder import load_model, flight_prediction, SaliencyAnalyzer
 import json, redis
 import numpy as np
 model, scaler, detector = load_model()
+features = ['alt', 'gs', 'heading', 'vertRate', 'altChange_encoded', 'gs_change_rate', 'heading_change_rate']
+
+# add saliency to the model
+model.add_saliency_analyzer(features)
 
 # Holds a short-term history of a flight
 rMem = redis.Redis(host='localhost', port=6379, db=0)

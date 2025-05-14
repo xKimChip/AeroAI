@@ -72,7 +72,7 @@ class EnhancedFlightPrediction(nn.Module):
     def add_saliency_analyzer(self, feature_names: List[str]):
         """Initialize saliency analyzer with feature names"""
         self.saliency_analyzer = SaliencyAnalyzer(self, feature_names)
-        self._feature_names = feature_names
+        #self._feature_names = feature_names
 
     def analyze_input(self, x: Union[np.ndarray, torch.Tensor]) -> Dict:
         """Enhanced analysis with numerical saliency values"""
@@ -90,10 +90,11 @@ class EnhancedFlightPrediction(nn.Module):
                 'reconstruction': reconstruction.cpu().numpy(),
                 'error': error.cpu().numpy()
             }
-            
+
         if hasattr(self, 'saliency_analyzer'):
             try:
                 results['explanation'] = self.saliency_analyzer.explain(x)
+                #print(results['explanation'])
             except Exception as e:
                 print(f"Saliency computation failed: {str(e)}")
                 results['explanation'] = None
@@ -155,32 +156,32 @@ def minimal_preprocess(filepath: str):
 
     return df
 
-    def add_saliency_analyzer(self, feature_names: List[str]):
-        """Initialize saliency analyzer after model creation"""
-        self.saliency_analyzer = SaliencyAnalyzer(self, feature_names)
+    # def add_saliency_analyzer(self, feature_names: List[str]):
+    #     """Initialize saliency analyzer after model creation"""
+    #     self.saliency_analyzer = SaliencyAnalyzer(self, feature_names)
     
-    def analyze_input(self, x: Union[np.ndarray, torch.Tensor]) -> Dict:
-        """Enhanced analysis with numerical saliency values"""
-        self.eval()
+    # def analyze_input(self, x: Union[np.ndarray, torch.Tensor]) -> Dict:
+    #     """Enhanced analysis with numerical saliency values"""
+    #     self.eval()
         
-        if isinstance(x, np.ndarray):
-            x = torch.FloatTensor(x)
+    #     if isinstance(x, np.ndarray):
+    #         x = torch.FloatTensor(x)
         
-        with torch.no_grad():
-            results = {
-                'input': x.cpu().numpy(),
-                'reconstruction': self.forward(x).cpu().numpy(),
-                'error': torch.mean((x - self.forward(x))**2, dim=1).cpu().numpy()
-            }
+    #     with torch.no_grad():
+    #         results = {
+    #             'input': x.cpu().numpy(),
+    #             'reconstruction': self.forward(x).cpu().numpy(),
+    #             'error': torch.mean((x - self.forward(x))**2, dim=1).cpu().numpy()
+    #         }
             
-        if hasattr(self, 'saliency_analyzer'):
-            try:
-                results['explanation'] = self.saliency_analyzer.explain(x)
-            except Exception as e:
-                print(f"Saliency computation failed: {str(e)}")
-                results['explanation'] = None
+    #     if hasattr(self, 'saliency_analyzer'):
+    #         try:
+    #             results['explanation'] = self.saliency_analyzer.explain(x)
+    #         except Exception as e:
+    #             print(f"Saliency computation failed: {str(e)}")
+    #             results['explanation'] = None
                 
-        return results
+    #     return results
 
     def get_reconstruction_error(self, x: torch.Tensor) -> torch.Tensor:
         """Compute per-sample reconstruction error"""
@@ -886,8 +887,17 @@ def flight_prediction(data, model, scaler, detector, explain=False):
 
     if explain:
         analysis = model.analyze_input(torch.FloatTensor(scaled))
-        anomalies_df['saliency'] = analysis.get('explanation', None)
+        explanation = analysis.get('explanation', None)
 
+        if explanation and 'feature_importance' in explanation:
+            for feature, importance in explanation['feature_importance'].items():
+                anomalies_df[f'saliency{feature}'] = float(importance)
+
+
+        if explanation and 'top_features' in explanation and explanation['top_features']:
+            top_feature, top_importance = explanation['top_features'][0]
+            anomalies_df['top_saliency_feature'] = top_feature
+            anomalies_df['top_saliency_value'] = float(top_importance)
     return anomalies_df
 
 

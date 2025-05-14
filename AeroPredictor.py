@@ -90,12 +90,14 @@ def move_to_predict(data):
 
 
    results_df = flight_prediction(df, model, scaler, detector, explain=True)
-   data_vals['anomaly'] = results_df.to_json() # Uncomment to see the whole dataframe
+   #data_vals['anomaly'] = results_df.to_json() # Uncomment to see the whole dataframe
 
    data_vals['anomaly_score'] = float(results_df['anomaly'].values[0]) # get the anomaly score from the results
 
+
    if data_vals['anomaly_score'] > 0:   # uncomment to see anomalies easier
-      data_vals['saliency'] = results_df['saliency'].values[0] # get the saliency from the results
+      data_vals['saliency_feature'] = results_df['top_saliency_feature'].values[0] # get the saliency from the results
+      data_vals['saliency_feature'] = results_df['top_saliency_value'].values[0]
       print(key)
    
    rMem.lpush(key, json.dumps(data_vals)) # push the columns of data to the list

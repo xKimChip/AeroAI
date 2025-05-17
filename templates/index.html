@@ -1,197 +1,140 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <title>Aircraft Detection & Tracking (Speed to Next Threat)</title>
-  <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-  
+  <meta charset="UTF-8">
+  <title>Live Flight Data</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Socket-IO client -->
+  <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4/dist/socket.io.min.js"></script>
+
   <style>
-    #map {
-      height: 80vh;
-      width: 100%;
-      margin-bottom: 10px;
-    }
-    #controls {
-      margin-bottom: 10px;
-    }
-    #threat-table-container {
-      position: absolute;
-      bottom: 20px;
-      left: 20px;
-      background: rgba(255, 255, 255, 0.8);
-      padding: 10px;
-      border-radius: 5px;
-      max-height: 400px;
-      overflow-y: auto;
-      z-index: 9999;
-    }
-    table {
-      border-collapse: collapse;
-      width: 300px;
-    }
-    th, td {
-      border: 1px solid #aaa;
-      padding: 6px;
-      text-align: center;
-    }
-    .threat {
-      color: red;
-      font-weight: bold;
-    }
+    html,body{height:100%;margin:0;font-family:sans-serif;background:#000}
+    #status{padding:8px 12px;background:#eee}
+    #map{height:80vh;width:100%}
+
+    #threatBox{
+      position:absolute;bottom:12px;left:12px;z-index:900;
+      background:rgba(255,255,255,.9);border:1px solid #aaa;
+      border-radius:6px;max-height:300px;overflow-y:auto;
+      box-shadow:0 2px 6px rgba(0,0,0,.3)}
+    #threatBox table{border-collapse:collapse;font-size:.8rem}
+    #threatBox th,#threatBox td{padding:4px 6px;border:1px solid #ccc;text-align:center}
+    #threatBox thead{background:#f8d7da}
+    .threatRow{color:#b30000;font-weight:600}
+
+    /* tiny legend circles */
+    #legend{margin:6px 0;font-size:.75rem;text-align:left}
+    #legend span{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px}
+
+    /* Leaflet div icon override – removes default img shadow box */
+    .planeIcon{background:none;border:none}
   </style>
 </head>
 <body>
-  <h1>Aircraft Detection &amp; Tracking (Speed to Next Threat)</h1>
-  <p>
-    This version shows flights at a normal pace (1 flight/sec). When you press “Next Threat,”
-    it <strong>accelerates</strong> through the remaining flights at 200ms intervals, 
-    showing all flights (including blue) until it finds the next anomaly (red).
-    Then it returns to normal speed.
-  </p>
-
-  <div id="controls">
-    <button id="btn-next-threat">Next Threat</button>
-  </div>
-
+  <div id="status">Waiting for data…</div>
   <div id="map"></div>
 
-  <div id="threat-table-container">
+  <!-- threat card -->
+  <div id="threatBox">
+    <div id="legend">
+      <span style="background:red"></span> Anomaly&nbsp;&nbsp;
+      <span style="background:#00aaff"></span> Normal
+    </div>
     <table>
-      <thead>
-        <tr>
-          <th>Aircraft ID</th>
-          <th>Score</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody id="threat-table-body"></tbody>
+      <thead><tr>
+        <th>IDENT</th><th>Score</th><th>Lat</th><th>Lon</th><th>Desc.</th>
+      </tr></thead>
+      <tbody id="tBody"></tbody>
     </table>
   </div>
 
   <script>
-    let map = L.map('map').setView([30.0, -20.0], 3);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+    /* ------- dark basemap -------- */
+    const map = L.map('map', { preferCanvas:true }).setView([0,0], 2);
+    L.tileLayer(
+      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      { attribution:'&copy; OpenStreetMap &amp; CartoDB' }
+    ).addTo(map);
 
-    // We store all flights after fetching them:
-    let allFlights = [];
-    let currentIndex = 0;
-
-    // Intervals:
-    let normalPlaybackInterval = null;
-    let normalDelay = 500; // 1 second
-    let fastDelay = 50;    
-
-    // 1) Fetch all flights ONCE
-    async function fetchAllFlights() {
-      try {
-        const response = await fetch('/get_flight_data');
-        const data = await response.json();
-        if (data.error) {
-          console.error(data.error);
-          return;
-        }
-        allFlights = data;
-        console.log(`Fetched ${allFlights.length} flights in total.`);
-      } catch (err) {
-        console.error('Error fetching flight data:', err);
-      }
+    /* helper: returns a rotated airplane icon */
+    function makePlaneIcon(color, headingDeg){
+      // simple arrow/plane SVG path
+      const path = "M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V18l-2 1.5V21l4-1 4 1v-1.5L13 18v-4.5l8 2.5z";
+      const svg = `
+        <svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'
+             fill='${color}' style='transform:rotate(${headingDeg}deg)'>
+          <path d='${path}'/>
+        </svg>`;
+      return L.divIcon({
+        className:'planeIcon',
+        html:svg,
+        iconSize:[20,20],
+        iconAnchor:[10,10]   // center the icon
+      });
     }
 
-    // 2) Start normal playback
-    function startNormalPlayback() {
-      stopPlayback(); // clear any existing intervals
-      normalPlaybackInterval = setInterval(() => {
-        revealNextFlight(false); // false => normal mode
-      }, normalDelay);
-    }
+    /* ------- Socket-IO -------- */
+    const socket = io();
 
-    // 3) Reveal the next flight in either normal or fast mode
-    //    "fastMode" param indicates if we are speeding up or not
-    function revealNextFlight(fastMode) {
-      if (!allFlights.length) return;
-      if (currentIndex >= allFlights.length) {
-        console.log("All flights have been displayed.");
-        if (fastMode) {
-          // once we run out in fast mode, just stop
-          stopPlayback();
-        }
-        return;
-      }
-      const flight = allFlights[currentIndex];
-      currentIndex++;
-      addFlightToMapAndTable(flight);
+    socket.on('connect', () => {
+      document.getElementById('status').textContent =
+        'Connected – waiting for flight data…';
+    });
 
-      // If in fast mode and we just displayed a THREAT, let's slow back down
-      if (fastMode && flight.anomaly) {
-        // Stop the fast loop
-        stopPlayback();
-        // Resume normal speed
-        startNormalPlayback();
-      }
-    }
+    socket.on('new_data', raw => {
+      const f = { ...raw };
+      // cast numeric-like strings ➜ numbers
+      ['lat','lon','alt','gs','heading','anomaly_score']
+        .forEach(k => f[k] = parseFloat(f[k]));
+      const ident    = f.ident ?? 'n/a';
+      const desc     = f.anomaly_description ?? '–';
+      const isThreat = f.anomaly_score > 0;
 
-    // 4) The function that actually draws the flight
-    function addFlightToMapAndTable(flight) {
-      let color = flight.anomaly ? 'red' : 'blue';
-      let marker = L.circleMarker([flight.lat, flight.lon], {
-        color: color,
-        radius: 6
-      }).addTo(map);
+      /* add plane marker */
+      const iconColor = isThreat ? 'red' : '#00aaff';
+      L.marker([f.lat, f.lon], {
+        icon: makePlaneIcon(iconColor, f.heading)
+      })
+      .addTo(map)
+      .bindPopup(
+        `<b>${ident}</b><br>
+         Alt: ${f.alt}<br>
+         GS: ${f.gs}<br>
+         Heading: ${f.heading}<br>
+         Anomaly: ${f.anomaly_score}<br>
+         ${isThreat ? desc : ''}`
+      );
 
-      marker.bindPopup(`
-        <strong>Aircraft ID:</strong> ${flight.id}<br/>
-        <strong>Altitude:</strong> ${flight.alt}<br/>
-        <strong>Speed:</strong> ${flight.gs}<br/>
-        <strong>Heading:</strong> ${flight.heading}<br/>
-        <strong>Score:</strong> ${flight.score.toFixed(4)}<br/>
-        <strong>Anomaly:</strong> ${flight.anomaly}
-      `);
+      /* status line */
+      document.getElementById('status').textContent =
+        `${new Date().toLocaleTimeString()} – ${
+          isThreat ? 'THREAT DETECTED' : 'normal traffic'
+        }`;
 
-      // If anomaly, add to threat table
-      if (flight.anomaly) {
-        const tableBody = document.getElementById('threat-table-body');
-        let row = document.createElement('tr');
-        row.classList.add('threat');
+      /* threat table */
+      if (isThreat) {
+        const row = document.createElement('tr');
+        row.className = 'threatRow';
         row.innerHTML = `
-          <td>${flight.id || 'Unknown'}</td>
-          <td>${flight.score.toFixed(2)}</td>
-          <td>Threat</td>
-        `;
-        tableBody.appendChild(row);
+          <td>${ident}</td>
+          <td>${f.anomaly_score.toFixed(2)}</td>
+          <td>${f.lat.toFixed(2)}</td>
+          <td>${f.lon.toFixed(2)}</td>
+          <td>${desc}</td>`;
+        const tbody = document.getElementById('tBody');
+        tbody.prepend(row);
+        if (tbody.rows.length > 25) tbody.deleteRow(25); // keep table short
       }
-    }
+    });
 
-    // 5) "Next Threat" button => fast forward
-    function jumpToNextThreat() {
-      // If user clicks "Next Threat," we speed up the reveal until we find an anomaly
-      // but we DO NOT skip the normal flights, we show them quickly at 'fastDelay'
-      stopPlayback(); // stop the normal 1-second reveal
-      normalPlaybackInterval = setInterval(() => {
-        revealNextFlight(true); // true => fast mode
-      }, fastDelay);
-    }
-
-    // Utility: Clear intervals
-    function stopPlayback() {
-      if (normalPlaybackInterval) {
-        clearInterval(normalPlaybackInterval);
-        normalPlaybackInterval = null;
-      }
-    }
-
-    // 6) On page load
-    (async () => {
-      await fetchAllFlights();
-      startNormalPlayback(); // begin normal speed
-
-      document.getElementById('btn-next-threat').addEventListener('click', jumpToNextThreat);
-    })();
-
-   
+    socket.on('disconnect', () => {
+      document.getElementById('status').textContent =
+        'Disconnected – retrying…';
+    });
   </script>
 </body>
 </html>

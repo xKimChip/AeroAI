@@ -1,0 +1,99 @@
+
+html, body {
+    height: 100%;
+    margin: 0;
+    font-family: sans-serif;
+    background: #000;
+  }
+  #status {
+    padding: 8px 12px;
+    background: #eee;
+  }
+  #map {
+    height: 100%;
+    width: calc(100% - 330px); 
+  }
+  
+
+  #threatBox {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    z-index: 900;
+    background: rgba(255,255,255,.9);
+    border: 1px solid #aaa;
+    border-radius: 6px;
+    max-height: 300px;
+    overflow-y: auto;
+    box-shadow: 0 2px 6px rgba(0,0,0,.3);
+  }
+  #threatBox table {
+    border-collapse: collapse;
+    font-size: .8rem;
+  }
+  #threatBox th,
+  #threatBox td {
+    padding: 4px 6px;
+    border: 1px solid #ccc;
+    text-align: center;
+  }
+  #threatBox thead {
+    background: #f8d7da;
+  }
+  #legend {
+    margin: 6px 0;
+    font-size: .75rem;
+    text-align: left;
+  }
+  #legend span {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 4px;
+  }
+  
+
+  #allBox {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 330px;
+    height: 100%;
+    z-index: 800;
+    background: rgba(30,30,30,.93);
+    color: #eee;
+    overflow-y: auto;
+    border-left: 2px solid #444;
+    padding: 8px 6px 40px 6px;
+    box-sizing: border-box;
+  }
+  #allBox h3 {
+    margin: 4px 0 6px;
+    color: #ccc;
+    font-size: .95rem;
+    text-align: center;
+  }
+  #allBox table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .78rem;
+  }
+  #allBox th,
+  #allBox td {
+    border: 1px solid #555;
+    padding: 3px 4px;
+    text-align: center;
+  }
+  #allBox th {
+    background: #222;
+    position: sticky;
+    top: 0;
+  }
+  
+
+  .planeIcon {
+    background: none;
+    border: none;
+  }
+  

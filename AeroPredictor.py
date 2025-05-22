@@ -1,6 +1,6 @@
 import pandas as pd
 from AeroEncoder import load_model, flight_prediction, SaliencyAnalyzer
-import json, redis
+import json, redis, time
 import numpy as np
 model, scaler, detector = load_model()
 features = ['alt', 'gs', 'heading', 'vertRate', 'altChange_encoded', 'gs_change_rate', 'heading_change_rate']
@@ -91,11 +91,10 @@ def move_to_predict(data):
 
    results_df = flight_prediction(df, model, scaler, detector, explain=True)
    #data_vals['anomaly'] = results_df.to_json() # Uncomment to see the whole dataframe
-
    data_vals['anomaly_score'] = max(float(results_df['anomaly'].values[0]), data_vals.get('anomaly_score',0))# get the anomaly score from the results
 
 
-   if data_vals['anomaly_score'] > 0:   # uncomment to see anomalies easier
+   if data_vals['anomaly_score'] > 0:   
       saliency_mapping = {       
                           'alt': f'Altitude: { data_vals["alt"]}',
                           'gs': f'Ground Speed: { data_vals["gs"]}',
@@ -115,7 +114,7 @@ def move_to_predict(data):
             description += f', {saliency_mapping[results_df["sal_feauture_3"].values[0]]}'
          
       data_vals['anomaly_description'] = description # get the saliency from the results
-      print(key)
+      #print(key)
    
    rMem.lpush(key, json.dumps(data_vals)) # push the columns of data to the list
    if rMem.ttl(key) == -1: # set the expirate time to ETIME
@@ -123,7 +122,7 @@ def move_to_predict(data):
    else:
       rMem.expire(key, EXPIRE_TIME_LONG, xx=True)
    rMem.publish('lpush_channel', key) # publish the key to the channel
-   
+
    
    # For Cloud usage
 #    rDisk.lpush(key, json.dumps(data_vals)) # push the columns of data to the list

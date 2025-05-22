@@ -217,15 +217,12 @@
         <td>${f.anomaly_score.toFixed(2)}</td>
       `;
 
-      if(isThreat && !document.getElementById('row-'+id)){
+      if (isThreat) {
         const log = document.getElementById('tBody');
-        const tr  = document.createElement('tr');
-        tr.id = 'row-'+id;
-        tr.style.background = color;
-        tr.style.color      = '#fff';
-        tr.addEventListener('click', makeRowClickHandler(id));
-        const now = new Date().toLocaleTimeString();
-        tr.innerHTML = `
+        const rowId = `'row-${id}'`;
+        const now   = new Date().toLocaleTimeString();
+        let tr = document.getElementById(`row-${id}`);
+        const html = `
           <td>${now}</td>
           <td>${id}</td>
           <td>${f.anomaly_score.toFixed(2)}</td>
@@ -233,10 +230,22 @@
           <td>${f.lon.toFixed(2)}</td>
           <td>${desc}</td>
         `;
-        log.prepend(tr);
-        if(log.rows.length>25) log.deleteRow(25);
-      }
 
+        if (tr) {
+          tr.innerHTML = html;
+          tr.style.background = color;
+          tr.style.color      = '#fff';
+        } else {
+          tr = document.createElement('tr');
+          tr.id = `row-${id}`;
+          tr.innerHTML = html;
+          tr.style.background = color;
+          tr.style.color      = '#fff';
+          tr.addEventListener('click', makeRowClickHandler(id));
+          log.prepend(tr);
+          if (log.rows.length > 25) log.deleteRow(25);
+        }
+      }
       document.getElementById('status').innerText =
         `${new Date().toLocaleTimeString()} – ${
           isThreat?'THREAT DETECTED':'normal traffic'

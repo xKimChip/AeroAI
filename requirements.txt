@@ -7,3 +7,4 @@ flask
 flask-socketio
 redis
 captum
+gevent

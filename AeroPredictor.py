@@ -97,19 +97,25 @@ def move_to_predict(data):
 
    if data_vals['anomaly_score'] > 0:   # uncomment to see anomalies easier
       saliency_mapping = {       
-                          'alt': f'Altitude anomaly { data_vals["alt"]}',
-                          'gs': f'Ground Speed anomaly { data_vals["gs"]}',
-                          'heading': f'Heading anomaly { data_vals["heading"]}',
-                          'vertRate': f'Vertical Rate anomaly { data_vals["vertRate"]}',
-                          'altChange_encoded': f'Altitude Change anomaly { data_vals["altChange_encoded"]}',
-                          'gs_change_rate': f'Ground Speed Change Rate anomaly { data_vals["gs_change_rate"]}',
-                          'heading_change_rate': f'Heading Change Rate anomaly { data_vals["heading_change_rate"]:.4f}'
+                          'alt': f'Altitude: { data_vals["alt"]}',
+                          'gs': f'Ground Speed: { data_vals["gs"]}',
+                          'heading': f'Heading: { data_vals["heading"]}',
+                          'vertRate': f'Vertical Rate: { data_vals["vertRate"]}',
+                          'altChange_encoded': f'Altitude Change: { data_vals["altChange_encoded"]}',
+                          'gs_change_rate': f'Ground Speed Change Rate: { data_vals["gs_change_rate"]:.4f}',
+                          'heading_change_rate': f'Heading Change Rate: { data_vals["heading_change_rate"]:.4f}'
                           }       
       
-      data_vals['sali_feat'] = results_df['top_saliency_feature'].values[0]
-      data_vals['sali_val'] = results_df['top_saliency_value'].values[0]
-      data_vals['anomaly_description'] = saliency_mapping[data_vals['sali_feat']] # get the saliency from the results
-      #print(key)
+      data_vals['sali_feat'] = results_df['sal_feauture_1'].values[0]
+      data_vals['sali_val'] = results_df['sal_value_1'].values[0]
+      description = f'{saliency_mapping[data_vals['sali_feat']]}'
+      if results_df['sal_value_2'].values[0] >= results_df['sal_value_1'].values[0] / 2 :
+         description += f', {saliency_mapping[results_df["sal_feauture_2"].values[0]]}'
+         if results_df['sal_value_3'].values[0] >= results_df['sal_value_1'].values[0] / 2 :
+            description += f', {saliency_mapping[results_df["sal_feauture_3"].values[0]]}'
+         
+      data_vals['anomaly_description'] = description # get the saliency from the results
+      print(key)
    
    rMem.lpush(key, json.dumps(data_vals)) # push the columns of data to the list
    if rMem.ttl(key) == -1: # set the expirate time to ETIME

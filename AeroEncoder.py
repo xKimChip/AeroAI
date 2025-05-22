@@ -896,8 +896,16 @@ def flight_prediction(data, model, scaler, detector, explain=False):
 
         if explanation and 'top_features' in explanation and explanation['top_features']:
             top_feature, top_importance = explanation['top_features'][0]
-            anomalies_df['top_saliency_feature'] = top_feature
-            anomalies_df['top_saliency_value'] = float(top_importance)
+            second_feature, second_importance = explanation['top_features'][1]
+            third_feature, third_importance = explanation['top_features'][2]
+            
+            anomalies_df['sal_feauture_1'] = top_feature
+            anomalies_df['sal_value_1'] = float(top_importance)
+            anomalies_df['sal_feauture_2'] = second_feature
+            anomalies_df['sal_value_2'] = float(second_importance)
+            anomalies_df['sal_feauture_3'] = third_feature
+            anomalies_df['sal_value_3'] = float(third_importance)
+            
     return anomalies_df
 
 

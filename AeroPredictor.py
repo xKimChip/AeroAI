@@ -65,7 +65,7 @@ def process_for_redis(data, eTime=EXPIRE_TIME):
       heading_diff = ((float(data['heading']) - float(temp['heading'])) + 180) % 360 - 180
       data_vals['heading_change_rate'] = heading_diff / data_vals['time_diff']                                           # compute the heading change rate
 
-      #data_vals['anomaly_score'] = max(0, temp['anomaly_score'] - data_vals['time_diff'] // 150)                   # Degrade anomaly score by 0.2 every 30 seconds                    
+      data_vals['anomaly_score'] = max(0, temp['anomaly_score'] - data_vals['time_diff'] // 150)                   # Degrade anomaly score by 0.2 every 30 seconds                    
    else:
       data_vals['time_diff'] = 1                            # if the list does not exist, set the first time_diff to 1
       data_vals['gs_change_rate'] = 0                       # if the list does not exist, set the first gs_change_rate to 0   
@@ -92,13 +92,24 @@ def move_to_predict(data):
    results_df = flight_prediction(df, model, scaler, detector, explain=True)
    #data_vals['anomaly'] = results_df.to_json() # Uncomment to see the whole dataframe
 
-   data_vals['anomaly_score'] = float(results_df['anomaly'].values[0]) # get the anomaly score from the results
+   data_vals['anomaly_score'] = max(float(results_df['anomaly'].values[0]), data_vals.get('anomaly_score',0))# get the anomaly score from the results
 
 
    if data_vals['anomaly_score'] > 0:   # uncomment to see anomalies easier
-      data_vals['saliency_feature'] = results_df['top_saliency_feature'].values[0] # get the saliency from the results
-      data_vals['saliency_feature'] = results_df['top_saliency_value'].values[0]
-      print(key)
+      saliency_mapping = {       
+                          'alt': f'Altitude anomaly { data_vals["alt"]}',
+                          'gs': f'Ground Speed anomaly { data_vals["gs"]}',
+                          'heading': f'Heading anomaly { data_vals["heading"]}',
+                          'vertRate': f'Vertical Rate anomaly { data_vals["vertRate"]}',
+                          'altChange_encoded': f'Altitude Change anomaly { data_vals["altChange_encoded"]}',
+                          'gs_change_rate': f'Ground Speed Change Rate anomaly { data_vals["gs_change_rate"]}',
+                          'heading_change_rate': f'Heading Change Rate anomaly { data_vals["heading_change_rate"]:.4f}'
+                          }       
+      
+      data_vals['sali_feat'] = results_df['top_saliency_feature'].values[0]
+      data_vals['sali_val'] = results_df['top_saliency_value'].values[0]
+      data_vals['anomaly_description'] = saliency_mapping[data_vals['sali_feat']] # get the saliency from the results
+      #print(key)
    
    rMem.lpush(key, json.dumps(data_vals)) # push the columns of data to the list
    if rMem.ttl(key) == -1: # set the expirate time to ETIME

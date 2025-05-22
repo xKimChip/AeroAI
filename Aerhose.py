@@ -310,10 +310,10 @@ def initiate_hose():
       end_time = start_time + duration
       print(f"Start time: {datetime.fromtimestamp(start_time)}")
    
-   
    while count > 0 or endless or time.time() < end_time:
       try :
          # read line from file:
+         
          inline = file.readline()
          if inline == '':
             # EOF

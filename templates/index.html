@@ -5,136 +5,227 @@
   <title>Live Flight Data</title>
 
   <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+  <script
+    defer
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  ></script>
 
-  <!-- Socket-IO client -->
-  <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4/dist/socket.io.min.js"></script>
 
-  <style>
-    html,body{height:100%;margin:0;font-family:sans-serif;background:#000}
-    #status{padding:8px 12px;background:#eee}
-    #map{height:80vh;width:100%}
+  <script defer src="/socket.io/socket.io.js"></script>
+  <script>
+    window.addEventListener('error', e => {
+      if (
+        e.target.tagName === 'SCRIPT' &&
+        e.target.getAttribute('src') === '/socket.io/socket.io.js'
+      ) {
+        const cdn = document.createElement('script');
+        cdn.src =
+          'https://cdn.jsdelivr.net/npm/socket.io-client@4/dist/socket.io.min.js';
+        document.head.appendChild(cdn);
+      }
+    }, true);
+  </script>
 
-    #threatBox{
-      position:absolute;bottom:12px;left:12px;z-index:900;
-      background:rgba(255,255,255,.9);border:1px solid #aaa;
-      border-radius:6px;max-height:300px;overflow-y:auto;
-      box-shadow:0 2px 6px rgba(0,0,0,.3)}
-    #threatBox table{border-collapse:collapse;font-size:.8rem}
-    #threatBox th,#threatBox td{padding:4px 6px;border:1px solid #ccc;text-align:center}
-    #threatBox thead{background:#f8d7da}
-    .threatRow{color:#b30000;font-weight:600}
-
-    /* tiny legend circles */
-    #legend{margin:6px 0;font-size:.75rem;text-align:left}
-    #legend span{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px}
-
-    /* Leaflet div icon override – removes default img shadow box */
-    .planeIcon{background:none;border:none}
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}"/>
 </head>
+
 <body>
   <div id="status">Waiting for data…</div>
   <div id="map"></div>
 
-  <!-- threat card -->
+  <div id="allBox">
+    <h3>All Flights (live)</h3>
+    <table id="allTable">
+      <thead>
+        <tr><th>IDENT</th><th>Lat</th><th>Lon</th><th>Alt</th><th>GS</th><th>Score</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
   <div id="threatBox">
     <div id="legend">
       <span style="background:red"></span> Anomaly&nbsp;&nbsp;
       <span style="background:#00aaff"></span> Normal
     </div>
     <table>
-      <thead><tr>
-        <th>IDENT</th><th>Score</th><th>Lat</th><th>Lon</th><th>Desc.</th>
-      </tr></thead>
+      <thead>
+        <tr><th>IDENT</th><th>Score</th><th>Lat</th><th>Lon</th><th>Desc.</th></tr>
+      </thead>
       <tbody id="tBody"></tbody>
     </table>
   </div>
 
   <script>
-    /* ------- dark basemap -------- */
-    const map = L.map('map', { preferCanvas:true }).setView([0,0], 2);
+  window.onload = () => {
+    const map = L.map('map',{ preferCanvas:true }).setView([0,0],2);
     L.tileLayer(
       'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
       { attribution:'&copy; OpenStreetMap &amp; CartoDB' }
     ).addTo(map);
 
-    /* helper: returns a rotated airplane icon */
-    function makePlaneIcon(color, headingDeg){
-      // simple arrow/plane SVG path
-      const path = "M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V18l-2 1.5V21l4-1 4 1v-1.5L13 18v-4.5l8 2.5z";
+    function redFromScore(sc){
+      const s = Math.max(0,Math.min(1,sc));
+      const a = 0.15 + 0.85*s;
+      return `rgba(255,0,0,${a})`;
+    }
+    function makePlaneIcon(fill,hdg){
       const svg = `
-        <svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'
-             fill='${color}' style='transform:rotate(${headingDeg}deg)'>
-          <path d='${path}'/>
+        <svg xmlns='http://www.w3.org/2000/svg' width='20' height='20'
+             viewBox='0 0 24 24' fill='${fill}'
+             style='transform:rotate(${hdg}deg)'>
+          <path d='M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V18l-2 1.5V21
+                   l4-1 4 1v-1.5L13 18v-4.5l8 2.5z'/>
         </svg>`;
       return L.divIcon({
         className:'planeIcon',
         html:svg,
         iconSize:[20,20],
-        iconAnchor:[10,10]   // center the icon
+        iconAnchor:[10,10]
       });
     }
 
-    /* ------- Socket-IO -------- */
-    const socket = io();
+    const aircraft = {};  
 
+    const socket = io();
     socket.on('connect', () => {
       document.getElementById('status').textContent =
         'Connected – waiting for flight data…';
     });
 
     socket.on('new_data', raw => {
-      const f = { ...raw };
-      // cast numeric-like strings ➜ numbers
+      const f = {...raw};
       ['lat','lon','alt','gs','heading','anomaly_score']
-        .forEach(k => f[k] = parseFloat(f[k]));
-      const ident    = f.ident ?? 'n/a';
-      const desc     = f.anomaly_description ?? '–';
-      const isThreat = f.anomaly_score > 0;
+        .forEach(k=>f[k] = parseFloat(f[k]));
 
-      /* add plane marker */
-      const iconColor = isThreat ? 'red' : '#00aaff';
-      L.marker([f.lat, f.lon], {
-        icon: makePlaneIcon(iconColor, f.heading)
-      })
-      .addTo(map)
-      .bindPopup(
-        `<b>${ident}</b><br>
-         Alt: ${f.alt}<br>
-         GS: ${f.gs}<br>
-         Heading: ${f.heading}<br>
-         Anomaly: ${f.anomaly_score}<br>
-         ${isThreat ? desc : ''}`
-      );
+      const ident    = f.ident || f.id || 'n/a';
+      const score    = f.anomaly_score;
+      const isThreat = score > 0;
+      const color    = isThreat ? redFromScore(score) : '#00aaff';
+      const desc     = f.anomaly_description || '–';
+      const pos      = [f.lat, f.lon];
 
-      /* status line */
-      document.getElementById('status').textContent =
+      let a = aircraft[ident];
+      if (a) {
+
+        a.marker
+          .setLatLng(pos)
+          .setIcon(makePlaneIcon(color, f.heading));
+        a.coords.push(pos);
+        a.trail.setLatLngs(a.coords).setStyle({ color });
+      } else {
+
+        const marker = L.marker(pos, { icon: makePlaneIcon(color, f.heading) })
+          .addTo(map)
+          .bindPopup(`
+            <b>${ident}</b><br>
+            Alt: ${f.alt}<br>
+            GS: ${f.gs}<br>
+            Heading: ${f.heading}<br>
+            Score: ${score.toFixed(2)}<br>
+            ${desc!=='–'?`<em>${desc}</em>`:''}
+          `);
+        marker.on('click', () => {
+          marker.openPopup();
+          map.panTo(marker.getLatLng());
+          selectRow(ident);
+          toggleTrail(ident);
+        });
+
+        const trail = L.polyline([pos], { color, weight:1, opacity:0.6 });
+        aircraft[ident] = {
+          marker,
+          trail,
+          coords: [pos],
+          visible: false
+        };
+      }
+
+      const tbodyAll = document.querySelector('#allTable tbody');
+      let row = document.getElementById(`all-${ident}`);
+      if (!row) {
+        row = document.createElement('tr');
+        row.id = `all-${ident}`;
+        tbodyAll.appendChild(row);
+        row.addEventListener('click', () => {
+          const { marker } = aircraft[ident];
+          marker.openPopup();
+          map.panTo(marker.getLatLng());
+          selectRow(ident);
+          toggleTrail(ident);
+        });
+      }
+      row.style.background = isThreat ? color : 'transparent';
+      row.style.color      = isThreat ? '#fff'  : '#eee';
+      row.innerHTML = `
+        <td>${ident}</td>
+        <td>${f.lat.toFixed(2)}</td>
+        <td>${f.lon.toFixed(2)}</td>
+        <td>${f.alt}</td>
+        <td>${f.gs}</td>
+        <td>${score.toFixed(2)}</td>
+      `;
+
+      // — update Threat log (only first time) —
+      if (isThreat && !document.getElementById(`row-${ident}`)) {
+        const tRow = document.createElement('tr');
+        tRow.id = `row-${ident}`;
+        tRow.style.background = color;
+        tRow.style.color      = '#fff';
+        tRow.innerHTML = `
+          <td>${ident}</td>
+          <td>${score.toFixed(2)}</td>
+          <td>${f.lat.toFixed(2)}</td>
+          <td>${f.lon.toFixed(2)}</td>
+          <td>${desc}</td>
+        `;
+        tRow.addEventListener('click', () => {
+          const { marker } = aircraft[ident];
+          marker.openPopup();
+          map.panTo(marker.getLatLng());
+          selectRow(ident);
+          toggleTrail(ident);
+        });
+        const log = document.getElementById('tBody');
+        log.prepend(tRow);
+        if (log.rows.length > 25) log.deleteRow(25);
+      }
+
+      document.getElementById('status').innerText =
         `${new Date().toLocaleTimeString()} – ${
           isThreat ? 'THREAT DETECTED' : 'normal traffic'
         }`;
-
-      /* threat table */
-      if (isThreat) {
-        const row = document.createElement('tr');
-        row.className = 'threatRow';
-        row.innerHTML = `
-          <td>${ident}</td>
-          <td>${f.anomaly_score.toFixed(2)}</td>
-          <td>${f.lat.toFixed(2)}</td>
-          <td>${f.lon.toFixed(2)}</td>
-          <td>${desc}</td>`;
-        const tbody = document.getElementById('tBody');
-        tbody.prepend(row);
-        if (tbody.rows.length > 25) tbody.deleteRow(25); // keep table short
-      }
     });
+
+    function selectRow(id) {
+      document.querySelectorAll('tr.selectedRow')
+        .forEach(r=>r.classList.remove('selectedRow'));
+      [`all-${id}`,`row-${id}`].forEach(rid=>{
+        const r = document.getElementById(rid);
+        if (r) r.classList.add('selectedRow');
+      });
+    }
+
+    function toggleTrail(id) {
+      const a = aircraft[id];
+      if (!a) return;
+      if (a.visible) {
+        map.removeLayer(a.trail);
+      } else {
+        a.trail.addTo(map);
+      }
+      a.visible = !a.visible;
+    }
 
     socket.on('disconnect', () => {
       document.getElementById('status').textContent =
         'Disconnected – retrying…';
     });
+  };
   </script>
 </body>
 </html>

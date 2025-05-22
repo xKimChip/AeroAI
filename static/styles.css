@@ -5,9 +5,28 @@ html, body {
     font-family: sans-serif;
     background: #000;
   }
-  #status {
-    padding: 8px 12px;
-    background: #eee;
+#status {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(100% - 355px); 
+  padding: 8px 12px;
+  background: #eee;
+  z-index: 900;
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: rgba(255, 255, 255, 0.6);  
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+  .planeGlow { filter: drop-shadow(0 0 8px #fff); }
+  .selectedRow { outline: 2px solid #fff; }
+
+  
+  .leaflet-top.leaflet-left {
+    top: 50px;             
   }
   #map {
     height: 100%;

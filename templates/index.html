@@ -5,32 +5,26 @@
   <title>Live Flight Data</title>
 
   <!-- Leaflet -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
-  <script
-    defer
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  ></script>
-
+  <link rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script defer
+          src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script defer src="/socket.io/socket.io.js"></script>
   <script>
     window.addEventListener('error', e => {
-      if (
-        e.target.tagName === 'SCRIPT' &&
-        e.target.getAttribute('src') === '/socket.io/socket.io.js'
-      ) {
+      if (e.target.tagName==='SCRIPT' &&
+          e.target.src.endsWith('/socket.io/socket.io.js')) {
         const cdn = document.createElement('script');
-        cdn.src =
-          'https://cdn.jsdelivr.net/npm/socket.io-client@4/dist/socket.io.min.js';
+        cdn.src = 'https://cdn.jsdelivr.net/npm/socket.io-client@4/dist/socket.io.min.js';
         document.head.appendChild(cdn);
       }
     }, true);
   </script>
 
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}"/>
+  <link rel="stylesheet"
+        href="{{ url_for('static',filename='styles.css') }}"/>
+
 </head>
 
 <body>
@@ -40,9 +34,10 @@
   <div id="allBox">
     <h3>All Flights (live)</h3>
     <table id="allTable">
-      <thead>
-        <tr><th>IDENT</th><th>Lat</th><th>Lon</th><th>Alt</th><th>GS</th><th>Score</th></tr>
-      </thead>
+      <thead><tr>
+        <th>IDENT</th><th>Lat</th><th>Lon</th>
+        <th>Alt</th><th>GS</th><th>Score</th>
+      </tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -53,33 +48,34 @@
       <span style="background:#00aaff"></span> Normal
     </div>
     <table>
-      <thead>
-        <tr><th>IDENT</th><th>Score</th><th>Lat</th><th>Lon</th><th>Desc.</th></tr>
-      </thead>
+      <thead><tr>
+        <th>Time</th><th>IDENT</th><th>Score</th>
+        <th>Lat</th><th>Lon</th><th>Desc.</th>
+      </tr></thead>
       <tbody id="tBody"></tbody>
     </table>
   </div>
 
   <script>
   window.onload = () => {
-    const map = L.map('map',{ preferCanvas:true }).setView([0,0],2);
+    const map = L.map('map',{preferCanvas:true}).setView([0,0],2);
     L.tileLayer(
       'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-      { attribution:'&copy; OpenStreetMap &amp; CartoDB' }
+      {attribution:'&copy; OpenStreetMap &amp; CartoDB'}
     ).addTo(map);
 
-    function redFromScore(sc){
-      const s = Math.max(0,Math.min(1,sc));
-      const a = 0.15 + 0.85*s;
-      return `rgba(255,0,0,${a})`;
+    const blue = '#00aaff';
+    function rgbaRed(s){
+      const t = Math.max(0,Math.min(1,s));
+      return `rgba(255,0,0,${0.15+0.85*t})`;
     }
-    function makePlaneIcon(fill,hdg){
+    function makePlaneIcon(fill, hdg){
       const svg = `
-        <svg xmlns='http://www.w3.org/2000/svg' width='20' height='20'
-             viewBox='0 0 24 24' fill='${fill}'
-             style='transform:rotate(${hdg}deg)'>
-          <path d='M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V18l-2 1.5V21
-                   l4-1 4 1v-1.5L13 18v-4.5l8 2.5z'/>
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+             viewBox="0 0 24 24" fill="${fill}"
+             style="transform:rotate(${hdg}deg)">
+          <path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V18
+                   l-2 1.5V21l4-1 4 1v-1.5L13 18v-4.5l8 2.5z"/>
         </svg>`;
       return L.divIcon({
         className:'planeIcon',
@@ -89,140 +85,166 @@
       });
     }
 
-    const aircraft = {};  
+    function deselectAll(){
+      document.querySelectorAll('.selectedRow')
+        .forEach(r=>r.classList.remove('selectedRow'));
+    }
+    function highlight(id){
+      const a = aircraft[id];
+      if(!a) return;
+      a.marker.openPopup();
+      map.flyTo(a.marker.getLatLng(), 6, {duration:0.8});
+      const el = a.marker.getElement();
+      if(el){
+        el.classList.add('planeGlow');
+        setTimeout(()=>el.classList.remove('planeGlow'),1200);
+      }
+      deselectAll();
+      ['all-'+id,'row-'+id].forEach(rid=>{
+        const tr=document.getElementById(rid);
+        if(tr) tr.classList.add('selectedRow');
+      });
+    }
+    function toggleTrail(id){
+      const a = aircraft[id];
+      if(!a) return;
+      a.visible = !a.visible;
+      a.segments.forEach(seg=>{
+        if(a.visible) map.addLayer(seg);
+        else map.removeLayer(seg);
+      });
+    }
+    function makeRowClickHandler(id){
+      return ()=>{
+        highlight(id);
+        toggleTrail(id);
+      };
+    }
+
+    const aircraft = {};
 
     const socket = io();
-    socket.on('connect', () => {
-      document.getElementById('status').textContent =
+    socket.on('connect', ()=>{
+      document.getElementById('status').innerText=
         'Connected – waiting for flight data…';
     });
 
-    socket.on('new_data', raw => {
+    socket.on('new_data', raw=>{
       const f = {...raw};
       ['lat','lon','alt','gs','heading','anomaly_score']
-        .forEach(k=>f[k] = parseFloat(f[k]));
+        .forEach(k=>f[k]=+f[k]);
 
-      const ident    = f.ident || f.id || 'n/a';
-      const score    = f.anomaly_score;
-      const isThreat = score > 0;
-      const color    = isThreat ? redFromScore(score) : '#00aaff';
-      const desc     = f.anomaly_description || '–';
-      const pos      = [f.lat, f.lon];
+      const id       = f.ident||f.id||'n/a';
+      const isThreat = f.anomaly_score>0;
+      const color    = isThreat?rgbaRed(f.anomaly_score):blue;
+      const desc     = f.anomaly_description||'–';
+      const pos      = [f.lat,f.lon];
 
-      let a = aircraft[ident];
-      if (a) {
+      function popupContent(){
+        return `
+          <b>${id}</b><br>
+          Alt: ${f.alt}<br>
+          GS: ${f.gs}<br>
+          Heading: ${f.heading}<br>
+          Score: ${f.anomaly_score.toFixed(2)}<br>
+          ${desc!=='–'?`<em>${desc}</em>`:''}
+        `;
+      }
 
-        a.marker
-          .setLatLng(pos)
-          .setIcon(makePlaneIcon(color, f.heading));
-        a.coords.push(pos);
-        a.trail.setLatLngs(a.coords).setStyle({ color });
-      } else {
+      let a = aircraft[id];
+      if(!a){
+        const mk = L.marker(pos,{
+          icon: makePlaneIcon(color,f.heading)
+        }).addTo(map)
+          .bindPopup(popupContent());
 
-        const marker = L.marker(pos, { icon: makePlaneIcon(color, f.heading) })
-          .addTo(map)
-          .bindPopup(`
-            <b>${ident}</b><br>
-            Alt: ${f.alt}<br>
-            GS: ${f.gs}<br>
-            Heading: ${f.heading}<br>
-            Score: ${score.toFixed(2)}<br>
-            ${desc!=='–'?`<em>${desc}</em>`:''}
-          `);
-        marker.on('click', () => {
-          marker.openPopup();
-          map.panTo(marker.getLatLng());
-          selectRow(ident);
-          toggleTrail(ident);
+        mk.on('popupclose', ()=>deselectAll());
+        mk.on('click', makeRowClickHandler(id));
+
+        const seg = L.polyline([pos],{
+          color,weight:1,opacity:0.6
         });
 
-        const trail = L.polyline([pos], { color, weight:1, opacity:0.6 });
-        aircraft[ident] = {
-          marker,
-          trail,
-          coords: [pos],
+        aircraft[id] = {
+          marker: mk,
+          segments: [seg],
+          currentColor: color,
+          currentCoords: [pos],
           visible: false
         };
+      } else {
+        a.marker.setLatLng(pos)
+                .setIcon(makePlaneIcon(color,f.heading));
+
+        a.marker.getPopup().setContent(popupContent());
+
+        const lastColor = a.currentColor;
+        const lastSeg   = a.segments[a.segments.length-1];
+        a.currentCoords.push(pos);
+
+        if(color === lastColor){
+          lastSeg.addLatLng(pos).setStyle({color});
+        } else {
+          a.currentColor = color;
+          const pts = [
+            a.currentCoords[a.currentCoords.length-2],
+            pos
+          ];
+          const seg = L.polyline(pts,{
+            color,weight:1,opacity:0.6
+          });
+          if(a.visible) seg.addTo(map);
+          a.segments.push(seg);
+        }
       }
 
-      const tbodyAll = document.querySelector('#allTable tbody');
-      let row = document.getElementById(`all-${ident}`);
-      if (!row) {
+      const tbAll = document.querySelector('#allTable tbody');
+      let row = document.getElementById('all-'+id);
+      if(!row){
         row = document.createElement('tr');
-        row.id = `all-${ident}`;
-        tbodyAll.appendChild(row);
-        row.addEventListener('click', () => {
-          const { marker } = aircraft[ident];
-          marker.openPopup();
-          map.panTo(marker.getLatLng());
-          selectRow(ident);
-          toggleTrail(ident);
-        });
+        row.id = 'all-'+id;
+        row.addEventListener('click', makeRowClickHandler(id));
+        tbAll.appendChild(row);
       }
-      row.style.background = isThreat ? color : 'transparent';
-      row.style.color      = isThreat ? '#fff'  : '#eee';
+      row.style.background = isThreat?color:'transparent';
+      row.style.color      = isThreat?'#fff':'#eee';
       row.innerHTML = `
-        <td>${ident}</td>
+        <td>${id}</td>
         <td>${f.lat.toFixed(2)}</td>
         <td>${f.lon.toFixed(2)}</td>
         <td>${f.alt}</td>
         <td>${f.gs}</td>
-        <td>${score.toFixed(2)}</td>
+        <td>${f.anomaly_score.toFixed(2)}</td>
       `;
 
-      // — update Threat log (only first time) —
-      if (isThreat && !document.getElementById(`row-${ident}`)) {
-        const tRow = document.createElement('tr');
-        tRow.id = `row-${ident}`;
-        tRow.style.background = color;
-        tRow.style.color      = '#fff';
-        tRow.innerHTML = `
-          <td>${ident}</td>
-          <td>${score.toFixed(2)}</td>
+      if(isThreat && !document.getElementById('row-'+id)){
+        const log = document.getElementById('tBody');
+        const tr  = document.createElement('tr');
+        tr.id = 'row-'+id;
+        tr.style.background = color;
+        tr.style.color      = '#fff';
+        tr.addEventListener('click', makeRowClickHandler(id));
+        const now = new Date().toLocaleTimeString();
+        tr.innerHTML = `
+          <td>${now}</td>
+          <td>${id}</td>
+          <td>${f.anomaly_score.toFixed(2)}</td>
           <td>${f.lat.toFixed(2)}</td>
           <td>${f.lon.toFixed(2)}</td>
           <td>${desc}</td>
         `;
-        tRow.addEventListener('click', () => {
-          const { marker } = aircraft[ident];
-          marker.openPopup();
-          map.panTo(marker.getLatLng());
-          selectRow(ident);
-          toggleTrail(ident);
-        });
-        const log = document.getElementById('tBody');
-        log.prepend(tRow);
-        if (log.rows.length > 25) log.deleteRow(25);
+        log.prepend(tr);
+        if(log.rows.length>25) log.deleteRow(25);
       }
 
       document.getElementById('status').innerText =
         `${new Date().toLocaleTimeString()} – ${
-          isThreat ? 'THREAT DETECTED' : 'normal traffic'
+          isThreat?'THREAT DETECTED':'normal traffic'
         }`;
     });
 
-    function selectRow(id) {
-      document.querySelectorAll('tr.selectedRow')
-        .forEach(r=>r.classList.remove('selectedRow'));
-      [`all-${id}`,`row-${id}`].forEach(rid=>{
-        const r = document.getElementById(rid);
-        if (r) r.classList.add('selectedRow');
-      });
-    }
-
-    function toggleTrail(id) {
-      const a = aircraft[id];
-      if (!a) return;
-      if (a.visible) {
-        map.removeLayer(a.trail);
-      } else {
-        a.trail.addTo(map);
-      }
-      a.visible = !a.visible;
-    }
-
-    socket.on('disconnect', () => {
-      document.getElementById('status').textContent =
+    socket.on('disconnect',()=>{
+      document.getElementById('status').innerText=
         'Disconnected – retrying…';
     });
   };

@@ -105,13 +105,13 @@ def move_to_predict(data):
                           'heading_change_rate': f'Heading Change Rate: { data_vals["heading_change_rate"]:.4f}'
                           }       
       
-      data_vals['sali_feat'] = results_df['sal_feauture_1'].values[0]
-      data_vals['sali_val'] = results_df['sal_value_1'].values[0]
-      description = f'{saliency_mapping[data_vals['sali_feat']]}'
+      # data_vals['sali_feat'] = results_df['sal_feauture_1'].values[0]
+      # data_vals['sali_val'] = results_df['sal_value_1'].values[0]
+      description = f"{saliency_mapping[results_df['sal_feauture_1'].values[0]]}"
       if results_df['sal_value_2'].values[0] >= results_df['sal_value_1'].values[0] / 2 :
-         description += f', {saliency_mapping[results_df["sal_feauture_2"].values[0]]}'
+         description += f", {saliency_mapping[results_df['sal_feauture_2'].values[0]]}"
          if results_df['sal_value_3'].values[0] >= results_df['sal_value_1'].values[0] / 2 :
-            description += f', {saliency_mapping[results_df["sal_feauture_3"].values[0]]}'
+            description += f", {saliency_mapping[results_df['sal_feauture_3'].values[0]]}"
          
       data_vals['anomaly_description'] = description # get the saliency from the results
       #print(key)

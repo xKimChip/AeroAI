@@ -65,7 +65,7 @@ def process_for_redis(data, eTime=EXPIRE_TIME):
       heading_diff = ((float(data['heading']) - float(temp['heading'])) + 180) % 360 - 180
       data_vals['heading_change_rate'] = heading_diff / data_vals['time_diff']                                           # compute the heading change rate
 
-      data_vals['anomaly_score'] = max(0, temp['anomaly_score'] - data_vals['time_diff'] // 150)                   # Degrade anomaly score by 0.2 every 30 seconds                    
+      data_vals['anomaly_score'] = max(0, temp['anomaly_score'] - (data_vals['time_diff'] / 150))                   # Degrade anomaly score by 0.2 every 30 seconds                    
    else:
       data_vals['time_diff'] = 1                            # if the list does not exist, set the first time_diff to 1
       data_vals['gs_change_rate'] = 0                       # if the list does not exist, set the first gs_change_rate to 0   
@@ -91,7 +91,9 @@ def move_to_predict(data):
 
    results_df = flight_prediction(df, model, scaler, detector, explain=True)
    #data_vals['anomaly'] = results_df.to_json() # Uncomment to see the whole dataframe
-   data_vals['anomaly_score'] = max(float(results_df['anomaly'].values[0]), data_vals.get('anomaly_score',0))# get the anomaly score from the results
+   #print(f'GET: {data_vals.get('anomaly_score',0)}')
+   #print(f'VALUES: {float(results_df['anomaly'].values[0])}')
+   data_vals['anomaly_score'] = max(float(results_df['anomaly'].values[0]), data_vals.get('anomaly_score',0.0))# get the anomaly score from the results
 
 
    if data_vals['anomaly_score'] > 0:   

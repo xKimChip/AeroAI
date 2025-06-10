@@ -8,7 +8,7 @@ from datetime import datetime
 
 
 username = "RTXDC"
-apikey = "***REMOVED***"
+apikey = ""
 latitude = 37.7749
 longitude = 46.53798
 range = 300

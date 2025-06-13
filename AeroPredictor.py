@@ -65,7 +65,10 @@ def process_for_redis(data, eTime=EXPIRE_TIME):
       heading_diff = ((float(data['heading']) - float(temp['heading'])) + 180) % 360 - 180
       data_vals['heading_change_rate'] = heading_diff / data_vals['time_diff']                                           # compute the heading change rate
 
-      data_vals['anomaly_score'] = max(0, temp['anomaly_score'] - (data_vals['time_diff'] / 150))                   # Degrade anomaly score by 0.2 every 30 seconds                    
+      data_vals['anomaly_score'] = max(0, temp['anomaly_score'] - (data_vals['time_diff'] / 150))                   # Degrade anomaly score by 0.2 every 30 seconds  
+      if temp.get('anomaly_description', None):
+         data_vals['anomaly_description'] = temp['anomaly_description']
+                    
    else:
       data_vals['time_diff'] = 1                            # if the list does not exist, set the first time_diff to 1
       data_vals['gs_change_rate'] = 0                       # if the list does not exist, set the first gs_change_rate to 0   
@@ -96,7 +99,7 @@ def move_to_predict(data):
    data_vals['anomaly_score'] = max(float(results_df['anomaly'].values[0]), data_vals.get('anomaly_score',0.0))# get the anomaly score from the results
 
 
-   if data_vals['anomaly_score'] > 0:   
+   if data_vals['anomaly_score'] >= 1.0:   
       saliency_mapping = {       
                           'alt': f'Altitude: { data_vals["alt"]}',
                           'gs': f'Ground Speed: { data_vals["gs"]}',
@@ -106,7 +109,6 @@ def move_to_predict(data):
                           'gs_change_rate': f'Ground Speed Change Rate: { data_vals["gs_change_rate"]:.4f}',
                           'heading_change_rate': f'Heading Change Rate: { data_vals["heading_change_rate"]:.4f}'
                           }       
-      
       # data_vals['sali_feat'] = results_df['sal_feauture_1'].values[0]
       # data_vals['sali_val'] = results_df['sal_value_1'].values[0]
       description = f"{saliency_mapping[results_df['sal_feauture_1'].values[0]]}"

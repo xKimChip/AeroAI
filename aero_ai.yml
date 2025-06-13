@@ -1,0 +1,14 @@
+name: .aeroai_env
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # --- Conda Packages ---
+  - python=3.12
+
+  # --- Pip Packages ---
+  - pip
+  - pip:
+    - -r requirements.txt

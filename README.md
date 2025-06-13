@@ -112,12 +112,6 @@ python3 app.py
 ```
 Opening up `localhost:5001` on a browser should now should the fully running application
 
-
-
-
-
-
-
 ## Authors
 | Team Member         | GitHub Username |
 |---------------------|----------------|
@@ -128,3 +122,9 @@ Opening up `localhost:5001` on a browser should now should the fully running app
 | Junyoung Yoon      | [junbuggyTT](https://github.com/junbuggyTT) |
 | Dushyant Bharadwaj | [dush1508](https://github.com/dush1508) |
 | Alvin Phan         | [alvinatp](https://github.com/alvinatp) |
+
+## Our Wonderful Sponsors
+
+This project is made possible by the generous support of our sponsor:
+
+<a href="https://www.rtx.com/raytheon" target="_blank"><img src="https://prd-sc102-cdn.rtx.com/raytheon/-/media/themes/raytheon-technologies/rtx-shared/rtx-theme/images/raytheon.svg?rev=c0d2d88fe39b4f54b95f79444c566c94&w=354&hash=ED664F3C75561C12BA0B44D12FAD89FF" width="250" alt="Raytheon Company" style="filter: brightness(10);"></a>
